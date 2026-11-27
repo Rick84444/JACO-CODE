@@ -73,7 +73,7 @@ export function LinearOAuthPanel({fresh,onChanged}:{fresh:boolean;onChanged:(not
     }catch(e:any){if(mounted.current&&revision===sequence.current)setError(String(e?.message||'MCP_OAUTH_CONNECTION_FAILED'));}
     finally{if(mounted.current&&revision===sequence.current)setBusy('');}
   };
-  if(error==='MCP_OAUTH_PREVIEW_DISABLED'||error==='LOCAL_UI_ONLY')return <p className="text-xs text-neutral-400">{tr('Kontoinloggning är ännu en lokal förhandsfunktion. Manuell API-nyckel finns nedan.','Account sign-in is a local preview. Manual API-key setup remains available below.')}</p>;
+  if(error==='MCP_OAUTH_PREVIEW_DISABLED'||error==='LOCAL_UI_ONLY')return <p className="text-xs text-neutral-400">{tr('Kontoinloggning är ännu en lokal förhandsfunktion och är inte tillgänglig här.','Account sign-in is a local preview and is not available here.')}</p>;
   const message=error||status?.error||'';
   const labels:Record<string,string>={
     MCP_OAUTH_EXISTING_CONFIGURATION:tr('En befintlig anslutning skyddas mot överskrivning.','An existing connection is protected from replacement.'),
