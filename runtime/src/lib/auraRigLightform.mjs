@@ -1,3 +1,4 @@
+import {createV31OpticalRig} from './auraV31OpticalRig.mjs';
 import {createHumanBehavior} from './auraHumanBehavior.mjs';
 import {createAuraBodyRig} from './auraBodyRig.mjs';
 import {VISEMES,emptySpeechPose,sampleSpeechPose,approachSpeechPose,createNaturalBlink,validSpeechTimeline} from './auraSpeechTimeline.mjs';
@@ -1093,11 +1094,17 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       // Reuse the existing pose, morph, voice and cognitive-state logic below.
       model.traverse(o=>{if(o.isSkinnedMesh)o.frustumCulled=false;});
       scene.add(model);
-      const ambient=new THREE.HemisphereLight(0xdce9ff,0x151b26,1.35);
-      const key=new THREE.DirectionalLight(0xe5efff,2.1);key.position.set(.65,2.3,1.7);
-      const rim=new THREE.DirectionalLight(0x9ab8e8,1.0);rim.position.set(-.7,1.95,-.8);
-      scene.add(ambient,key,rim);
-      lightBody={update(){},dispose(){}};
+      const optics=createV31OpticalRig(scene,model,renderer);
+      lightBody={
+        update(_t,_e,_b,_s,_q,_d,_p,dt,reduced){
+          const status=optics.update(dt,reduced);
+          canvas.dataset.eyePupilScale=status.pupilScale.toFixed(3);
+          canvas.dataset.eyePupilShader=status.pupilReady?'configured':'unavailable';
+          canvas.dataset.studioEnvironment=status.environmentReady?'configured':'unavailable';
+          canvas.dataset.opticalSurfaceCount=String(status.surfaceCount);
+        },
+        dispose(){optics.dispose();}
+      };
     }else{
       lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField,stars);
     }
@@ -1381,7 +1388,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       }
       geometry.attributes.position.needsUpdate=true;geometry.attributes.aNormal.needsUpdate=true;
       material.uniforms.uTime.value=t;material.uniforms.uEnergy.value=energy;
-      lightBody.update(t,energy,blink,finiteClamp(smoothJaw*2.0,0,1,0),qualityTier,decisionBlend,pupilSize);
+      lightBody.update(t,energy,blink,finiteClamp(smoothJaw*2.0,0,1,0),qualityTier,decisionBlend,pupilSize,dt,still);
 
       let signature=0;for(let j=0;j<Math.min(positions.length,6000);j+=31)signature+=positions[j]*(j+1);
       canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer=anatomical?'rigged-anatomical-v31':'rigged-particle-field';
