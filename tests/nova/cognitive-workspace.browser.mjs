@@ -297,6 +297,75 @@ try {
   await page.keyboard.press('Escape');
   await portrait.waitFor({state:'detached'});
   passed('Aura rigged lightform changes actual geometry and rendered frame with motion enabled');
+  // Real browser rendering, not merely a CSS background or a status flag.
+  for(const width of [1440,393]){
+    await page.setViewportSize({width,height:852});
+    await portraitTrigger.click();
+    await portrait.getByRole('button',{name:'Isgrotta · helkropp'}).click();
+    await page.waitForFunction(()=>{
+      const canvas=document.querySelector('.aura-portrait-scene canvas');
+      return canvas?.dataset.renderer==='rigged-cavern'&&Number(canvas.dataset.drawCalls)>4&&Number(canvas.dataset.triangles)>1000&&Number(canvas.dataset.frameBudget)<=24;
+    },{},{timeout:20000});
+    const cavernCanvas=portrait.locator('canvas');
+    const before=await cavernCanvas.getAttribute('data-yaw');
+    await cavernCanvas.locator('..').hover({position:{x:12,y:30}});
+    await page.waitForFunction(previous=>Math.abs(Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.yaw)-Number(previous))>.025,before,{timeout:10000});
+    await screenshot('aura-ice-cavern-'+width);
+    await portrait.getByRole('button',{name:'Återgå till närbild'}).click();
+    await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.renderer==='rigged-particle-field');
+    await page.keyboard.press('Escape');
+    await portrait.waitFor({state:'detached'});
+    assert.equal(await input().inputValue(),'Porträttet bevarar utkastet');
+  }
+  await page.setViewportSize({width:1440,height:960});
+  passed('Cavern scene renders and returns to the original portrait without replacing the draft');
+
+  // Aura's anatomical model is the default portrait. A missing candidate falls back to the lightform and says so;
+  // the lightform is never shown under Aura's label, and an explicit retry fails the same visible way.
+  const anatomicalRoute='**/branding/aura-anatomical.glb';
+  const fallbackNotice='Auras modell saknas eller kunde inte verifieras';
+  await page.route(anatomicalRoute,route=>route.fulfill({status:404,body:'Not installed'}));
+  await portraitTrigger.click();
+  await portrait.getByText(fallbackNotice,{exact:false}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.renderer==='rigged-particle-field');
+  assert.equal(await portrait.getByRole('button',{name:'Återgå till ljusgestalt',exact:true}).count(),0,'the lightform is not labelled as Aura');
+  await portrait.getByRole('button',{name:'Aura anatomisk 3D',exact:true}).click();
+  await portrait.getByText(fallbackNotice,{exact:false}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.renderer==='rigged-particle-field');
+  await page.keyboard.press('Escape');
+  await portrait.waitFor({state:'detached'});
+  await page.unroute(anatomicalRoute);
+  passed('Missing anatomical model falls back visibly to the lightform portrait');
+  if(process.env.JACO_AURA_ANATOMICAL_PATH){
+    const candidate=fs.readFileSync(process.env.JACO_AURA_ANATOMICAL_PATH);
+    await page.route(anatomicalRoute,route=>route.fulfill({status:200,contentType:'model/gltf-binary',body:candidate}));
+    for(const width of [1440,393]){
+      await page.setViewportSize({width,height:852});
+      await portraitTrigger.click();
+      // Default: Aura's model in the head-and-shoulders close-up, no button press needed.
+      await page.waitForFunction(()=>{
+        const d=document.querySelector('.aura-portrait-scene canvas')?.dataset;
+        return d?.renderer==='anatomical-textured-mesh'&&d.framing==='portrait'&&Number(d.triangles)>50000&&Number(d.renderedPoints)===0&&Number(d.bodyBones)>=6;
+      },{},{timeout:45000});
+      await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.blinkMm)>0.5,{},{timeout:15000});
+      assert.equal(await portrait.getByText(fallbackNotice,{exact:false}).count(),0);
+      await screenshot('aura-anatomical-portrait-'+width);
+      await portrait.getByRole('button',{name:'Visa helkropp',exact:true}).click();
+      await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.framing==='full'&&document.querySelector('.aura-portrait-scene canvas')?.dataset.renderer==='anatomical-textured-mesh',{},{timeout:45000});
+      await screenshot('aura-anatomical-full-'+width);
+      await portrait.getByRole('button',{name:'Återgå till ljusgestalt',exact:true}).click();
+      await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.renderer==='rigged-particle-field');
+      await screenshot('aura-lightform-choice-'+width);
+      await portrait.getByRole('button',{name:'Aura anatomisk 3D',exact:true}).click();
+      await page.keyboard.press('Escape');
+      await portrait.waitFor({state:'detached'});
+    }
+    await page.unroute(anatomicalRoute);
+    passed('Provisioned anatomical candidate is the default close-up, switches to full body and to the lightform, with real blink deformation');
+  }else console.log('SKIP anatomical positive browser test: JACO_AURA_ANATOMICAL_PATH not supplied');
+  await page.setViewportSize({width:1440,height:960});
+
+
   await input().fill('Behåll mitt utkast');
   await canvas('Kod').click();await canvas('Samtal').click();
   assert.equal(await input().inputValue(),'Behåll mitt utkast');
@@ -639,11 +708,38 @@ try {
   await page.waitForFunction(()=>window.auraSpokenReplies.length===1);
   assert.equal(requests.filter(request=>request.kind==='chat').length,previousChatRequests+1);
   assert.deepEqual(await page.evaluate(()=>window.auraSpokenReplies),['Testsvaret använder de observerade händelserna. Uppdraget fortsätter.']);
-  await page.waitForFunction(()=>Number(document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm)>3,{},{timeout:15000});
-  await screenshot('aura-rig-speaking');
+  await page.waitForFunction(()=>{
+    const d=document.querySelector('.aura-portrait-scene canvas')?.dataset;
+    return d?.conversationFloor==='speaking'&&d?.articulationSource==='unavailable'&&d?.jawMm==='0.000';
+  });
   await page.evaluate(()=>window.auraCurrentReply.onend?.());
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='idle');
+  passed('Browser speech without observable audio drives conversational posture but never fabricates articulation');
+
+  // Positive control: actual PCM playback, not simulated speech events or semantic lip sync.
+  const rate=24000,count=rate*3,wav=Buffer.alloc(44+count*2);
+  wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);
+  wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);
+  wav.writeUInt32LE(rate,24);wav.writeUInt32LE(rate*2,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);
+  wav.write('data',36);wav.writeUInt32LE(count*2,40);
+  for(let i=0;i<count;i++){
+    const t=i/rate;let v=0;
+    for(let k=1;k<=15;k++)v+=Math.sin(2*Math.PI*180*k*t)/Math.sqrt(k);
+    const envelope=Math.min(1,t*20,(3-t)*20);
+    wav.writeInt16LE(Math.round(Math.max(-1,Math.min(1,v*.17))*envelope*24000),44+i*2);
+  }
+  await page.route('**/api/aura/voice/speak',route=>route.fulfill({status:200,contentType:'audio/wav',body:wav}));
+  await portraitInput.fill('Testa ljudstyrd artikulation.');
+  await portrait.getByRole('button',{name:'Skicka',exact:true}).click();
+  await page.waitForFunction(()=>{
+    const d=document.querySelector('.aura-portrait-scene canvas')?.dataset;
+    return d?.conversationFloor==='speaking'&&d?.articulationSource==='audio-formants'&&Number(d?.jawMm)>.5;
+  },{},{timeout:15000});
+  await screenshot('aura-rig-speaking');
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='idle',{},{timeout:15000});
   await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.jawMm==='0.000');
-  passed('Controlled speech drives actual jaw morph displacement, then returns to rest; blinking independently moves eyelid vertices');
+  await page.unroute('**/api/aura/voice/speak');
+  passed('Actual PCM playback drives measured jaw displacement and returns to neutral; synthetic tone is not a lip-sync accuracy test');
   await portrait.getByRole('button',{name:'Stäng Auras porträtt'}).click();
   passed('Portrait dictation uses the canonical chat and reads its new reply with a controlled speech adapter');
   // A browser engine may report an error without an end event. Late callbacks
@@ -660,10 +756,16 @@ try {
   await portrait.getByRole('button',{name:'Diktera',exact:true}).click();
   await portrait.getByRole('button',{name:'Sluta lyssna',exact:true}).waitFor();
   assert.equal(await portrait.getByRole('button',{name:'Läs upp svar'}).isDisabled(),true,'reader cannot be enabled during recording');
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='receptive');
+  await page.evaluate(()=>window.auraTestRecording.onspeechstart?.());
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='user-speaking');
+  await page.evaluate(()=>window.auraTestRecording.onspeechend?.());
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='receptive');
   await page.evaluate(()=>window.auraTestRecording.onerror());
   await portrait.getByRole('button',{name:'Diktera',exact:true}).waitFor();
   await portrait.getByText('Röstfunktionen kunde inte användas.',{exact:false}).waitFor();
-  await page.evaluate(()=>window.auraTestRecording.onresult({results:[[{transcript:'STALE_CALLBACK'}]]}));
+  await page.evaluate(()=>{window.auraTestRecording.onresult({results:[[{transcript:'STALE_CALLBACK'}]]});window.auraTestRecording.onspeechstart?.();});
+  await page.waitForFunction(()=>document.querySelector('.aura-portrait-scene canvas')?.dataset.conversationFloor==='idle');
   assert.equal(await portraitInput.inputValue(),'Behåll detta utkast');
   await portrait.getByRole('button',{name:'Diktera',exact:true}).click();
   assert.equal(await portrait.getByRole('button',{name:'Sluta lyssna',exact:true}).getAttribute('aria-pressed'),'true');

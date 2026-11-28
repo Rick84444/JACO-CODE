@@ -11,6 +11,10 @@ import path from 'node:path';
 
 const JS = 'text/javascript; charset=utf-8';
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': JS, '.mjs': JS };
+// The modules the rig imports beside itself. One that is not served fails the whole rig, and the particle ball
+// takes Aura's place, so the test walks the real import graph.
+export const RIG_MODULES = ['auraCavern.mjs', 'auraBodyMotion.mjs', 'auraFacialDynamics.mjs', 'auraConversationBehavior.mjs', 'auraAnatomicalAsset.mjs', 'auraHeadAudio.mjs', 'auraStand.mjs'];
+const rigModules = dir => Object.fromEntries(RIG_MODULES.map(name => ['/vendor/' + name, path.join(dir, name)]));
 
 function layout(runtimeRoot) {
   const stage = path.join(runtimeRoot, 'operator-stage');
@@ -21,6 +25,7 @@ function layout(runtimeRoot) {
       '/vendor/aura-rig.mjs': path.join(runtimeRoot, 'src/lib/auraRigLightform.mjs'),
       '/vendor/workspace-actions.mjs': path.join(runtimeRoot, 'src/lib/workspaceActions.mjs'),
       '/vendor/speech-parts.mjs': path.join(runtimeRoot, 'src/lib/speechParts.mjs'),
+      ...rigModules(path.join(runtimeRoot, 'src/lib')),
     },
     threeRoots: {
       '/vendor/three/build/': path.join(runtimeRoot, 'node_modules/three/build'),
@@ -35,6 +40,7 @@ function layout(runtimeRoot) {
       '/vendor/aura-rig.mjs': path.join(built, 'vendor/aura-rig.mjs'),
       '/vendor/workspace-actions.mjs': path.join(built, 'vendor/workspace-actions.mjs'),
       '/vendor/speech-parts.mjs': path.join(built, 'vendor/speech-parts.mjs'),
+      ...rigModules(path.join(built, 'vendor')),
     },
     threeRoots: {
       '/vendor/three/build/': path.join(built, 'vendor/three/build'),

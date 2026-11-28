@@ -13,8 +13,8 @@ const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 import os from 'node:os';
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-stage-src-'));
 process.on('exit', () => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
-for (const rel of ['operator-stage/index.html', 'operator-stage/stage.css', 'operator-stage/stage.js', 'operator-stage/setup.js', 'operator-stage/setupSteps.mjs',
-  'src/lib/auraRigLightform.mjs', 'src/lib/workspaceActions.mjs', 'src/lib/speechParts.mjs']) {
+const { STAGE_FILES: SOURCES } = await import('../../runtime/scripts/build-operator-stage.mjs');
+for (const rel of Object.values(SOURCES)) {
   fs.mkdirSync(path.dirname(path.join(fixtureRoot, rel)), { recursive: true });
   fs.copyFileSync(path.join(runtimeRoot, rel), path.join(fixtureRoot, rel));
 }
@@ -84,6 +84,35 @@ test('every module the stage imports is resolved by the assets and routed by the
     assert.ok(inList, `${url} is not in the runtime's route list, so it would fall through to the IDE page`);
   }
   for (const url of ['/', '/stage.css', '/stage.js']) assert.ok(routes.includes(`'${url}'`), url);
+});
+
+// 2026-11-28: the rig gained sibling modules. One the stage does not serve makes the whole import fail, and Aura
+// is replaced by the particle ball. Walk the real import graph from the rig.
+test('every module the rig imports, directly or further down, is served by the stage', () => {
+  const seen = new Set(), queue = ['/vendor/aura-rig.mjs'];
+  while (queue.length) {
+    const url = queue.pop();
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const asset = assets.resolve(url);
+    assert.ok(asset, url + ' is imported by the rig but not served');
+    for (const m of assets.read(asset).toString('utf8').matchAll(/^import\s[^;]*?from\s*['"](\.{1,2}\/[^'"]+)['"]/gm))
+      queue.push(new URL(m[1], 'http://stage' + url).pathname);
+  }
+  assert.ok(seen.size >= 7, 'the rig modules were followed');
+});
+
+test('the stage shows the anatomical model first and keeps the lightform for when it is missing', () => {
+  const stage = fs.readFileSync(path.join(runtimeRoot, 'operator-stage', 'stage.js'), 'utf8');
+  assert.match(stage, /anatomical: true, framing: 'full', backdrop: false/);
+  assert.match(stage, /classList\.add\('full-body'\)/);
+  // Her own layout: no round mask or screen blend over the figure, and the lightform keeps the centred one.
+  const css = fs.readFileSync(path.join(runtimeRoot, 'operator-stage', 'stage.css'), 'utf8');
+  assert.match(css, /body\.full-body \.aura canvas \{[^}]*mask-image: none;[^}]*mix-blend-mode: normal;/);
+  assert.match(stage, /showing the lightform/);
+  const rig = fs.readFileSync(path.join(runtimeRoot, 'src/lib/auraRigLightform.mjs'), 'utf8');
+  assert.match(rig, /backdrop=true/);
+  assert.match(rig, /if\(backdrop\)scene\.background=/);
 });
 
 test('a release without the stage files reports it, so the runtime keeps the IDE at /', () => {

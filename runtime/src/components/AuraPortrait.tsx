@@ -19,6 +19,8 @@ interface Dictation {
   interimResults?: boolean;
   onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }> }) => void) | null;
   onend: (() => void) | null;
+  onspeechstart?: (() => void) | null;
+  onspeechend?: (() => void) | null;
   onerror: ((event?: { error?: string }) => void) | null;
   start(): void;
   stop?(): void;
@@ -28,6 +30,15 @@ interface Dictation {
 // Per-viewer convenience: a conversation left on stays on when the portrait opens again.
 const CONVERSATION_KEY = 'jaco.aura.conversation';
 function savedConversation() { try { return localStorage.getItem(CONVERSATION_KEY) === '1'; } catch { return false; } }
+
+
+const PORTRAIT_MODE_KEY='jaco.aura.portraitMode';
+function readPortraitMode(): 'aura' | 'lightform' | null {
+  try { const v=globalThis.localStorage?.getItem(PORTRAIT_MODE_KEY); return v==='aura'||v==='lightform'?v:null; } catch { return null; }
+}
+function writePortraitMode(mode: 'aura' | 'lightform') {
+  try { globalThis.localStorage?.setItem(PORTRAIT_MODE_KEY,mode); } catch { /* the choice just is not remembered */ }
+}
 
 export default function AuraPortrait({ tone, label, chat, onClose }: {
   tone: string;
@@ -44,21 +55,35 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const [listening, setListening] = useState(false);
   const [readReplies, setReadReplies] = useState(savedConversation);
   const [speaking, setSpeaking] = useState(false);
+  const [userSpeaking, setUserSpeaking] = useState(false);
+  const [preparingSpeech, setPreparingSpeech] = useState(false);
+  const [speechAct, setSpeechAct] = useState<'neutral' | 'question'>('neutral');
   const [voiceError, setVoiceError] = useState(false);
   const [maskError, setMaskError] = useState(false);
+  const [photoreal, setPhotoreal] = useState(false);
+  const [cavern, setCavern] = useState(false);
+  // Aura's anatomical model is the default portrait; the lightform stays one click away. Only an explicit choice is
+  // remembered, so an automatic fallback (model missing) never hides Aura once a verified model is installed.
+  const [anatomical, setAnatomical] = useState(() => readPortraitMode() !== 'lightform');
+  const [framing, setFraming] = useState<'portrait' | 'full'>('portrait');
+  const [anatomicalFallback, setAnatomicalFallback] = useState(false);
+  const choosePortrait = (mode: 'aura' | 'lightform') => { writePortraitMode(mode); setAnatomicalFallback(false); setAnatomical(mode === 'aura'); };
+  const audioTap = useRef<MediaStream | null>(null);
   // Conversation mode: listen, send after a pause, hear the reply, listen again.
   const [conversation, setConversation] = useState(savedConversation);
   const [awaiting, setAwaiting] = useState(false);
   const conversationRef = useRef(false);
-  const rig = useRef<Awaited<ReturnType<typeof import('../lib/auraRigLightform.mjs')['createAuraRigLightform']>> | null>(null);
+  const awaitToken = useRef(0);
+  const rig = useRef<Awaited<ReturnType<typeof import('../lib/auraRigLightform.mjs')['createAuraRigLightform']>> | Awaited<ReturnType<typeof import('../lib/auraSplatProvider.mjs')['createAuraSplatProvider']>> | null>(null);
   const latestReply = chat?.messages.filter(message => message.role === 'assistant' && message.content.trim()).at(-1);
   const lastRead = useRef(latestReply?.id);
   const active = tone === 'active' || speaking;
-  const rigState = useRef({active:false,speaking:false,listening:false,x:0,y:0});
+  const awaitingReply = awaiting || Boolean(chat?.busy);
+  const rigState = useRef({active:false,speaking:false,listening:false,x:0,y:0,conversationManaged:true,userSpeaking:false,speechPlaying:false,preparingSpeech:false,awaitingReply:false,speechAct:'neutral'});
   useEffect(()=>{
-    Object.assign(rigState.current,{active,speaking,listening});
+    Object.assign(rigState.current,{active,speaking,listening,userSpeaking:userSpeaking&&listening,speechPlaying:speaking,preparingSpeech,awaitingReply,speechAct});
     rig.current?.setState(rigState.current);
-  },[active,speaking,listening]);
+  },[active,speaking,listening,userSpeaking,preparingSpeech,awaitingReply,speechAct]);
   const locale = language === 'sv' ? 'sv-SE' : 'en-US';
   const speechWindow = window as Window & {
     SpeechRecognition?: new () => Dictation;
@@ -81,13 +106,18 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const onVisibility = () => {
       if (!document.hidden) return;
       stop();
+      awaitToken.current++;
+      setAwaiting(false);
       setListening(false);
+      setUserSpeaking(false);
+      setPreparingSpeech(false);
       setSpeaking(false);
       setReadReplies(false);
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
+      awaitToken.current++;
       stop();
     };
   }, [synthesis]);
@@ -95,12 +125,15 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   useEffect(() => {
     if (!latestReply || lastRead.current === latestReply.id) return;
     lastRead.current = latestReply.id;
+    awaitToken.current++;
+    setAwaiting(false);
     // Never play into an open microphone, read restored history or start audio in a hidden tab.
     if (!readReplies || !chat?.storageReady || document.hidden || dictation.current) return;
     if (utterance.current) {
       const previous = utterance.current;
       utterance.current = null;
       setSpeaking(false);
+      setPreparingSpeech(false);
       try { previous.cancel(); } catch { /* Already stopped. */ }
     }
     const text = workspaceReplyText(latestReply.content);
@@ -111,26 +144,43 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const controller = new AbortController();
     const audio = new Audio();
     const urls: string[] = [];
+    let started = false;
+    let nativePlayback = true;
     const handle = {
       cancel: () => {
         controller.abort();
         audio.pause();
         urls.forEach(u => URL.revokeObjectURL(u));
-        rig.current?.setState({ audioSource: null });
+        audioTap.current = null;
+        rig.current?.setState({ audioSource: null, speaking:false, speechPlaying:false, preparingSpeech:false });
       },
     };
     const finish = () => {
       if (utterance.current !== handle) return;
       utterance.current = null;
+      controller.abort();
+      audio.pause();
       setSpeaking(false);
-      rig.current?.setState({ audioSource: null });
+      setPreparingSpeech(false);
+      audioTap.current = null;
+      rig.current?.setState({ audioSource: null, speaking:false, speechPlaying:false, preparingSpeech:false });
       urls.forEach(u => URL.revokeObjectURL(u));
     };
     const browserFallback = () => {
       if (utterance.current !== handle || !synthesis) { setVoiceError(true); finish(); return; }
+      nativePlayback = false;
+      controller.abort();
+      audio.pause();
+      urls.forEach(u => URL.revokeObjectURL(u));
+      audioTap.current = null;
+      rig.current?.setState({ audioSource:null, speaking:false, speechPlaying:false });
+      setPreparingSpeech(true);
       const reply = new SpeechSynthesisUtterance(text);
       reply.lang = locale;
-      reply.onstart = () => { if (utterance.current === handle) setSpeaking(true); };
+      setSpeechAct(/\?\s*$/.test(text)?'question':'neutral');
+      reply.onstart = () => { if (utterance.current === handle) { setPreparingSpeech(false); setSpeaking(true); } };
+      reply.onpause = () => { if (utterance.current === handle) setSpeaking(false); };
+      reply.onresume = () => { if (utterance.current === handle) { setPreparingSpeech(false); setSpeaking(true); } };
       reply.onend = finish;
       reply.onerror = event => {
         if (utterance.current === handle && !['canceled', 'interrupted'].includes(event.error)) setVoiceError(true);
@@ -140,32 +190,57 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       try { synthesis.speak(reply); } catch { setVoiceError(true); finish(); }
     };
     utterance.current = handle;
+    setPreparingSpeech(true);
     const parts = speechParts(text);
     const synthesize = (part: string) => fetch('/api/aura/voice/speak', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
       body: JSON.stringify({ text: part, lang: locale }),
     }).then(async response => {
       if (!response.ok) throw new Error('VOICE_UNAVAILABLE');
-      const url = URL.createObjectURL(await response.blob());
+      const blob = await response.blob();
+      if (controller.signal.aborted || utterance.current !== handle) throw new DOMException('Speech canceled','AbortError');
+      const url = URL.createObjectURL(blob);
       urls.push(url);
       return url;
     });
     // Lip sync listens to a copy of the stream; the audio element itself plays straight to the speakers, so a
     // suspended Web Audio context can never silence Aura.
-    audio.onplay = () => {
-      if (utterance.current !== handle) return;
+    audio.onplaying = () => {
+      if (utterance.current !== handle || !nativePlayback) return;
+      started = true;
+      setPreparingSpeech(false);
       setSpeaking(true);
-      const tap = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.();
-      rig.current?.setState({ audioSource: tap ?? null, speaking: true });
+      try { audioTap.current = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.() ?? null; }
+      catch { audioTap.current = null; }
+      rig.current?.setState({ audioSource: audioTap.current, speaking: true, speechPlaying:true, preparingSpeech:false });
     };
+    const pauseVisualSpeech = (preparing: boolean) => {
+      if (utterance.current !== handle || !nativePlayback) return;
+      setSpeaking(false);
+      setPreparingSpeech(preparing);
+      rig.current?.setState({ speaking:false, speechPlaying:false, preparingSpeech:preparing });
+    };
+    audio.onwaiting = () => pauseVisualSpeech(true);
+    audio.onpause = () => { if (audio.paused && !audio.ended) pauseVisualSpeech(false); };
     const playPart = (url: string) => new Promise<void>((resolve, reject) => {
-      audio.onended = () => resolve();
-      audio.onerror = () => reject(new Error('VOICE_PLAYBACK_FAILED'));
+      let settled = false;
+      const settle = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        controller.signal.removeEventListener('abort',cancel);
+        audio.onended = null;
+        audio.onerror = null;
+        if (error) reject(error); else resolve();
+      };
+      const cancel = () => settle(new DOMException('Speech canceled','AbortError'));
+      if (controller.signal.aborted) { cancel(); return; }
+      controller.signal.addEventListener('abort',cancel,{once:true});
+      audio.onended = () => { pauseVisualSpeech(true); settle(); };
+      audio.onerror = () => settle(new Error('VOICE_PLAYBACK_FAILED'));
       audio.src = url;
-      audio.play().catch(reject);
+      audio.play().catch(settle);
     });
     void (async () => {
-      let started = false;
       if (!parts.length) { finish(); return; }
       try {
         let next = synthesize(parts[0]);
@@ -174,8 +249,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
           if (utterance.current !== handle) return;
           // Prefetch the following sentence while this one plays.
           if (index + 1 < parts.length) { next = synthesize(parts[index + 1]); next.catch(() => {}); }
+          setSpeechAct(/\?\s*$/.test(parts[index])?'question':'neutral');
           await playPart(url);
-          started = true;
           if (utterance.current !== handle) return;
         }
         finish();
@@ -192,6 +267,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       const recording = dictation.current;
       dictation.current = null;
       setListening(false);
+      setUserSpeaking(false);
       try { recording.abort(); } catch { setVoiceError(true); }
       return;
     }
@@ -202,12 +278,15 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       utterance.current = null;
       try { reply.cancel(); } catch { /* Already stopped. */ }
       setSpeaking(false);
+      setPreparingSpeech(false);
     }
     setVoiceError(false);
     const recording = new Recognition();
     recording.lang = locale;
     recording.continuous = true;
     recording.interimResults = true;
+    recording.onspeechstart = () => { if (dictation.current === recording) setUserSpeaking(true); };
+    recording.onspeechend = () => { if (dictation.current === recording) setUserSpeaking(false); };
     // Text already in the box stays; this session's words are shown live and replaced as they are refined.
     let base = (chat.input || '').trimEnd();
     let committed = '';
@@ -229,24 +308,28 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
           if (dictation.current !== recording || !conversationRef.current) return;
           dictation.current = null;
           setListening(false);
+          setUserSpeaking(false);
           try { recording.abort(); } catch { /* Engine already stopped. */ }
+          const token = ++awaitToken.current;
           setAwaiting(true);
-          setTimeout(() => { if (!submitDraft()) setAwaiting(false); }, 60);
-          setTimeout(() => setAwaiting(false), 90000);
+          setTimeout(() => { if (awaitToken.current === token && (!conversationRef.current || document.hidden || !submitDraft())) setAwaiting(false); }, 60);
+          setTimeout(() => { if (awaitToken.current === token) setAwaiting(false); }, 90000);
         }, 1300);
       }
     };
     recording.onerror = event => {
       if (dictation.current !== recording) return;
       // Silence and engine restarts are normal while listening; only real failures are reported.
-      if (event?.error === 'no-speech' || event?.error === 'aborted') return;
+      if (event?.error === 'no-speech' || event?.error === 'aborted') { setUserSpeaking(false); return; }
       dictation.current = null;
       setListening(false);
+      setUserSpeaking(false);
       setVoiceError(true);
       try { recording.abort(); } catch { /* Engine already stopped. */ }
     };
     recording.onend = () => {
       if (dictation.current !== recording) return;
+      setUserSpeaking(false);
       // Browsers end recognition after a pause; keep listening until the operator presses stop.
       base = [base, committed].filter(Boolean).join(' ');
       committed = '';
@@ -289,6 +372,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       if (!readReplies) { lastRead.current = latestReply?.id; setReadReplies(true); }
     } else {
       if (dictation.current) toggleDictation();
+      awaitToken.current++;
       setAwaiting(false);
     }
   }
@@ -296,8 +380,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   // Conversation loop: when Aura is neither working nor speaking, start listening again.
   useEffect(() => {
     conversationRef.current = conversation;
-    if (!conversation || !chat || listening || speaking || awaiting || chat.busy || document.hidden || dictation.current) return;
-    const id = setTimeout(() => { if (conversationRef.current && !dictation.current) toggleDictation(); }, 450);
+    if (!conversation || !chat || listening || speaking || preparingSpeech || awaiting || chat.busy || document.hidden || dictation.current || utterance.current) return;
+    const id = setTimeout(() => { if (conversationRef.current && !dictation.current && !utterance.current) toggleDictation(); }, 450);
     return () => clearTimeout(id);
   });
 
@@ -308,6 +392,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       utterance.current = null;
       try { reply.cancel(); } catch { setVoiceError(true); }
       setSpeaking(false);
+      setPreparingSpeech(false);
     }
     // Establish the baseline on enable, including restored chat history.
     lastRead.current = latestReply?.id;
@@ -325,14 +410,22 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const controller=new AbortController();
     const element=canvas.current;
     if(!element)return;
-    void import('../lib/auraRigLightform.mjs').then(({createAuraRigLightform})=>
-      createAuraRigLightform(element,{signal:controller.signal,onError:()=>{if(!controller.signal.aborted)setMaskError(true);}})
-    ).then(instance=>{
+    setMaskError(false);
+    const options={signal:controller.signal,onError:()=>{if(!controller.signal.aborted)setMaskError(true);}};
+    const load=photoreal
+      ? import('../lib/auraSplatProvider.mjs').then(({createAuraSplatProvider})=>createAuraSplatProvider(element,options))
+      : import('../lib/auraRigLightform.mjs').then(({createAuraRigLightform})=>createAuraRigLightform(element,{...options,cavern,anatomical,framing}));
+    void load.then(instance=>{
       if(controller.signal.aborted){instance.dispose();return;}
-      rig.current=instance;instance.setState(rigState.current);
-    }).catch(()=>{if(!controller.signal.aborted)setMaskError(true);});
+      rig.current=instance;instance.setState({...rigState.current,audioSource:audioTap.current});
+    }).catch(()=>{
+      if(controller.signal.aborted)return;
+      // A missing or unverified model falls back to the lightform and says so; it is never shown under Aura's label.
+      if(anatomical){setAnatomicalFallback(true);setAnatomical(false);return;}
+      setMaskError(true);
+    });
     return()=>{controller.abort();rig.current?.dispose();rig.current=null;};
-  },[]);
+  },[photoreal,cavern,anatomical,framing]);
 
   return <dialog ref={dialog} className="aura-portrait" aria-labelledby="aura-portrait-title"
     onCancel={event => { event.preventDefault(); onClose(); }}
@@ -341,15 +434,33 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       <h2 id="aura-portrait-title">Aura</h2>
       <button type="button" onClick={onClose} aria-label={tr('Stäng Auras porträtt', 'Close Aura portrait')}><X size={20}/></button>
     </header>
-    <div className="aura-portrait-scene" onPointerMove={event => {
+    <div key={anatomical ? 'anatomical' : photoreal ? 'splat' : cavern ? 'cavern' : 'lightform'} className="aura-portrait-scene" style={{position:'relative'}} onPointerMove={event => {
       const rect = event.currentTarget.getBoundingClientRect();
       const p={x:2*(event.clientX-rect.left)/rect.width-1,y:2*(event.clientY-rect.top)/rect.height-1};
       Object.assign(rigState.current,p);rig.current?.setState(p);
     }} onPointerLeave={() => { Object.assign(rigState.current,{x:0,y:0});rig.current?.setState({x:0,y:0}); }}>
       <canvas ref={canvas} width={480} height={480} role="img"
-        aria-label={tr('Auras tredimensionella ljusgestalt', 'Aura’s three-dimensional lightform')}/>
+        aria-label={anatomical ? tr('Aura anatomisk 3D-kandidat', 'Aura anatomical 3D candidate') : photoreal ? tr('Experimentellt fotorealistiskt ansikte', 'Experimental photoreal face') : cavern ? tr('Aura i en tredimensionell isgrotta', 'Aura in a three-dimensional ice cavern') : tr('Auras tredimensionella ljusgestalt', 'Aura’s three-dimensional lightform')}/>
     </div>
-    {maskError && <p role="status">{tr('Den tredimensionella gestalten kunde inte laddas. Chatten är fortfarande tillgänglig.', 'The 3D lightform could not load. Chat remains available.')}</p>}
+    <div className="aura-portrait-controls">
+    <button type="button" aria-pressed={cavern} disabled={speaking || listening || awaiting} onClick={()=>{setAnatomical(false);setPhotoreal(false);setCavern(value=>!value);}}>
+      {cavern ? tr('Återgå till närbild', 'Return to close-up') : tr('Isgrotta · helkropp', 'Ice cavern · full body')}
+    </button>
+    <button type="button" aria-pressed={photoreal} disabled={speaking || listening || awaiting} onClick={()=>{setAnatomical(false);setCavern(false);setPhotoreal(value=>!value);}}>
+      {photoreal ? tr('Återgå till ljusgestalt', 'Return to lightform') : tr('Prova lokalt ansikte (experimentellt)', 'Try local face (experimental)')}
+    </button>
+    <button type="button" aria-pressed={anatomical} disabled={speaking || preparingSpeech || listening || awaiting} onClick={()=>{setPhotoreal(false);setCavern(false);choosePortrait(anatomical?'lightform':'aura');}}>
+      {anatomical ? tr('Återgå till ljusgestalt','Return to lightform') : tr('Aura anatomisk 3D','Aura anatomical 3D')}
+    </button>
+    {anatomical && <button type="button" aria-pressed={framing==='full'} disabled={speaking || preparingSpeech || listening || awaiting} onClick={()=>setFraming(value=>value==='portrait'?'full':'portrait')}>
+      {framing==='portrait' ? tr('Visa helkropp','Show full body') : tr('Visa ansikte','Show face')}
+    </button>}
+    </div>
+    {anatomical && <p className="aura-portrait-voice-note">{tr('Texturerad anatomisk kandidat (V4/V6/V31). Hår, dräkt och ansiktslikhet är inte slutgiltiga.','Textured anatomical candidate (V4/V6/V31). Hair, clothing and facial likeness are not final.')}</p>}
+    {cavern && <p className="aura-portrait-voice-note">{tr('Lokal 3D-scen · befintlig rigg, ännu inte det slutliga ansiktet.', 'Local 3D scene · existing rig, not yet the final face.')}</p>}
+    {photoreal && <p className="aura-portrait-voice-note">{tr('Kräver en lokalt installerad, licensgodkänd ansiktsmodell. Ljudstyrd formantanimation; inte verifierad läppsynk.', 'Requires a locally installed, rights-cleared head. Audio-driven formant animation; lip sync not verified.')}</p>}
+    {anatomicalFallback && !anatomical && !cavern && !photoreal && <p role="status">{tr('Auras modell saknas eller kunde inte verifieras, så ljusgestalten visas. Installera en verifierad V4-, V6- eller V31-modell.','Aura\'s model is missing or could not be verified, so the lightform is shown. Install a verified V4, V6 or V31 model.')}</p>}
+    {maskError && <p role="status">{anatomical ? tr('Den lokala anatomiska modellen saknas eller kunde inte verifieras. Installera en verifierad V4-, V6- eller V31-modell eller välj en annan visning.','The local anatomical model is missing or could not be verified. Install a verified V4, V6 or V31 model or select another view.') : photoreal ? tr('Lokalt ansikte kunde inte användas. Kontrollera installation eller återgå till ljusgestalt.', 'Local face unavailable. Check installation or return to lightform.') : tr('Den tredimensionella gestalten kunde inte laddas. Chatten är fortfarande tillgänglig.', 'The 3D lightform could not load. Chat remains available.')}</p>}
     <p data-tone={tone}>{label}</p>
     {chat && <div className="aura-portrait-conversation">
       {latestReply && <div className="aura-portrait-reply" aria-live="polite">{workspaceReplyText(latestReply.content)}</div>}
