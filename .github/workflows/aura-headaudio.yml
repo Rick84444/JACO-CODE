@@ -1,0 +1,37 @@
+name: Aura HeadAudio integration
+on:
+  pull_request:
+    paths:
+      - 'runtime/src/lib/auraHeadAudio.mjs'
+      - 'runtime/src/lib/auraRigLightform.mjs'
+      - 'runtime/public/vendor/aura-headaudio/**'
+      - 'tests/nova/aura-headaudio.test.mjs'
+      - '.github/workflows/aura-headaudio.yml'
+permissions:
+  contents: read
+jobs:
+  head-audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check runtime/src/lib/auraHeadAudio.mjs
+          node --check runtime/src/lib/auraRigLightform.mjs
+          for file in runtime/public/vendor/aura-headaudio/*.mjs; do node --check "$file"; done
+      - name: Verify unchanged upstream sources
+        run: |
+          python - <<'PY'
+          import hashlib, pathlib, re
+          root=pathlib.Path('runtime/public/vendor/aura-headaudio')
+          for name,expected in re.findall(r'^- (.+): git blob ([0-9a-f]{40})$',(root/'UPSTREAM.md').read_text(),re.M):
+              data=(root/pathlib.Path(name).name).read_bytes()
+              actual=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+              assert actual==expected, (name,actual,expected)
+          PY
+      - name: Adapter regression tests
+        run: node --test tests/nova/aura-headaudio.test.mjs

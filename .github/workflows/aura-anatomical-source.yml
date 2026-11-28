@@ -1,0 +1,31 @@
+name: Aura anatomical source audit
+on:
+  pull_request:
+    paths:
+      - 'runtime/scripts/aura_anatomical_source.py'
+      - 'runtime/scripts/aura_landmark_fit.py'
+      - 'runtime/scripts/test_aura_anatomical_fit.py'
+      - '.github/workflows/aura-anatomical-source.yml'
+permissions:
+  contents: read
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test offline numerical primitive and GLB decoder
+        run: |
+          python -m py_compile runtime/scripts/aura_anatomical_source.py runtime/scripts/aura_landmark_fit.py
+          python runtime/scripts/test_aura_anatomical_fit.py -v
+      - name: Download immutable upstream CC0 base for authoring
+        run: |
+          mkdir -p aura-audit
+          curl --fail --location --retry 2 --max-time 120 'https://raw.githubusercontent.com/met4citizen/TalkingHead/1563de184c19b310de4b636664d5835e2c74dbba/avatars/mpfb.glb' -o aura-audit/source.glb
+          python runtime/scripts/aura_anatomical_source.py aura-audit/source.glb --out aura-audit
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aura-anatomical-source-calibration
+          path: aura-audit/
+          if-no-files-found: error
+          retention-days: 7
