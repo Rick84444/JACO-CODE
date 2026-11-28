@@ -17,7 +17,7 @@ test('official catalog presets are valid explicit operator configurations with r
     assert.equal(config.tokenEnv,draft.tokenEnv||null);
     assert.notEqual(mcpCatalogDraft(item.id),draft);
   }
-  assert.equal(ids.size,14);
+  assert.equal(ids.size,15);
   assert.throws(()=>mcpCatalogDraft('arbitrary'),/MCP_CATALOG_UNKNOWN/);
 });
 test('configuration, authentication, stale state and discovered tools are distinct',()=>{
@@ -97,4 +97,14 @@ test('enterprise evidence separates catalog identity, stale observations and tes
   assert.equal(pluginEvidence({...provider,catalogMatch:false}).state,'CUSTOM_CONFIGURATION');
   assert.equal(financialOptions([{...provider,catalogMatch:false}]).strategies.find(s=>s.id==='market-research').state,'SETUP_OR_DISCOVERY_REQUIRED');
   assert.equal(financialOptions([provider],at).observedAt,at);
+});
+
+test('Stripe sandbox is explicitly isolated from financial strategy readiness',()=>{
+  const draft=mcpCatalogDraft('stripe-sandbox');
+  assert.equal(draft.tokenEnv,'JACO_MCP_GUIDED_STRIPE_SANDBOX');
+  assert.equal(pluginEnvironment('stripe-sandbox'),'SANDBOX');
+  const ready={id:'stripe-sandbox',status:'READY',agentAccess:'read',catalogMatch:true,credentialConfigured:true,tools:[{name:'get_stripe_account_info',readOnly:true,agentAllowed:true}]};
+  const options=financialOptions([ready,{...ready,id:'paypal-sandbox'}]);
+  assert.equal(options.plugins.find(p=>p.id==='stripe-sandbox').environment,'SANDBOX');
+  assert.ok(options.strategies.every(s=>s.state==='SETUP_OR_DISCOVERY_REQUIRED'&&!s.financialMutationAllowed));
 });

@@ -10,7 +10,7 @@ const require=createRequire(path.join(root,'package.json'));
 const {build}=require('esbuild');
 const {chromium}=await import(process.env.JACO_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.JACO_PLAYWRIGHT_MODULE).href : pathToFileURL(require.resolve('playwright')).href);
 const bundle=await build({stdin:{contents:
-  "import React from 'react';import{createRoot}from'react-dom/client';import{ProviderConnect}from'./src/components/ProviderConnect';import{McpServersPanel}from'./src/components/McpServersPanel';import{UiLanguageProvider}from'./src/i18n/UiLanguage';function Fixture(){const [allow,setAllow]=React.useState(true);return <UiLanguageProvider initialLanguage='sv'>{location.search.includes('integrations')?<McpServersPanel observedAt={new Date().toISOString()} providers={[{id:'render',name:'Render',role:'Cloud',status:'READY',transport:'http',error:null,agentAccess:'read',credentialConfigured:true,allowOpenLogin:allow,catalogMatch:true,loginOpeningSupported:true,tools:[{name:'list_services',description:'Read services',readOnly:true,agentAllowed:true}],deny:['delete_service'],stats:{calls:0,failures:0,refused:0,lastCall:null}}]} recentCalls={[]} busy={null} selectedToolId={null} onStart={()=>{}} onSelectTool={()=>{}} onChanged={message=>{if(message.includes('revoked'))setAllow(false);}}/>:<ProviderConnect onConnected={()=>{}}/>}</UiLanguageProvider>}createRoot(document.getElementById('root')).render(<Fixture/>);",
+  "import React from 'react';import{createRoot}from'react-dom/client';import{ProviderConnect}from'./src/components/ProviderConnect';import{McpServersPanel}from'./src/components/McpServersPanel';import{UiLanguageProvider}from'./src/i18n/UiLanguage';function Fixture(){const [allow,setAllow]=React.useState(true);return <UiLanguageProvider initialLanguage='sv'>{location.search.includes('integrations')?<McpServersPanel observedAt={new Date().toISOString()} providers={[{id:'render',name:'Render',role:'Cloud',status:'READY',transport:'http',error:null,agentAccess:'read',credentialConfigured:true,credentialEnv:'JACO_MCP_GUIDED_RENDER',allowOpenLogin:allow,catalogMatch:true,loginOpeningSupported:true,tools:[{name:'list_services',description:'Read services',readOnly:true,agentAllowed:true}],deny:['delete_service'],stats:{calls:0,failures:0,refused:0,lastCall:null}}]} recentCalls={[]} busy={null} selectedToolId={null} onStart={()=>{}} onSelectTool={()=>{}} onChanged={message=>{if(message.includes('revoked'))setAllow(false);}}/>:<ProviderConnect onConnected={()=>{}}/>}</UiLanguageProvider>}createRoot(document.getElementById('root')).render(<Fixture/>);",
   resolveDir:root,loader:'tsx'},bundle:true,write:false,platform:'browser',format:'esm',jsx:'automatic'});
 const cssDir=path.join(root,'dist','assets');
 const cssFiles=fs.readdirSync(cssDir).filter(f=>f.endsWith('.css'));
@@ -26,6 +26,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='POST'||req.method==='PATCH'){
     let body='';for await(const c of req)body+=c;
     mutations.push({url:req.url,body:JSON.parse(body||'{}')});
+    if(req.url.startsWith('/api/aura/workbench/mcp/connect/'))return send({success:true,id:req.url.split('/').at(-1),state:'READ_PROBE_VERIFIED',verifiedAt:new Date().toISOString(),probe:'fixture_read',proof:{accountObserved:true},toolCount:1});
     return send({success:true,result:{state:'READY',id:'gemini',models:['fixture-model'],defaultModel:'fixture-model'}});
   }
   if(req.url.endsWith('/brains'))return send({success:true,brains});
@@ -93,15 +94,48 @@ try{
     await page.keyboard.press('Escape');
     await detail.waitFor({state:'hidden'});
     assert.equal(await render.evaluate(el=>document.activeElement===el),true);
+    await render.click();
+    await detail.getByRole('button',{name:'Replace expired token',exact:true}).click();
+    await detail.getByLabel('Replacement API token').fill('fixture-replacement-only');
+    const replace=detail.getByRole('button',{name:'Verify and replace token'});
+    assert.equal(await replace.isDisabled(),true);
+    await detail.getByRole('checkbox',{name:/I authorize replacement/}).check();
+    await replace.click();
+    await detail.getByText('Account read verified',{exact:true}).waitFor();
+    assert.deepEqual(mutations.at(-1),{url:'/api/aura/workbench/mcp/connect/render',body:{token:'fixture-replacement-only',replaceCredential:true}});
+    assert.equal(await detail.getByLabel('Replacement API token').count(),0,'successful replacement closes the input');
+    await detail.getByRole('button',{name:'Replace expired token',exact:true}).click();
+    assert.equal(await detail.getByLabel('Replacement API token').inputValue(),'');
+    await page.keyboard.press('Escape');
+    await detail.waitFor({state:'hidden'});
     await page.getByRole('button',{name:'Available',exact:true}).click();
     await page.getByRole('button',{name:'Review CoinGecko integration'}).click();
     await page.getByRole('dialog',{name:'CoinGecko'}).getByRole('button',{name:'Configure connection'}).click();
     const setup=page.getByRole('dialog',{name:'Configure integration'});
     await setup.waitFor();
     assert.equal(await setup.getByLabel('Server id').inputValue(),'coingecko');
-    assert.equal(mutations.length,1,'setup review is not a connection');
+    assert.equal(mutations.length,2,'setup review is not a connection');
     await page.keyboard.press('Escape');
     await setup.waitFor({state:'hidden'});
+    await page.getByRole('button',{name:'Review GitHub remote integration'}).click();
+    const github=page.getByRole('dialog',{name:'GitHub remote'});
+    await github.getByLabel('Integration API token').fill('fixture-new-only');
+    await github.getByRole('button',{name:'Connect and verify'}).click();
+    await github.getByText('Account read verified',{exact:true}).waitFor();
+    assert.deepEqual(mutations.at(-1),{url:'/api/aura/workbench/mcp/connect/github-remote',body:{token:'fixture-new-only',allowOpenLogin:false}});
+    assert.equal(await github.getByLabel('Integration API token').inputValue(),'');
+    await page.keyboard.press('Escape');
+    await github.waitFor({state:'hidden'});
+    await page.getByRole('button',{name:'Review Stripe Sandbox integration'}).click();
+    const stripe=page.getByRole('dialog',{name:'Stripe Sandbox'});
+    await stripe.getByText(/Sandbox only/).waitFor();
+    assert.equal(await stripe.getByRole('link',{name:'Open Stripe Dashboard · API keys'}).getAttribute('href'),'https://dashboard.stripe.com/apikeys');
+    assert.equal(await stripe.getByRole('button',{name:'Configure connection'}).count(),0);
+    await stripe.getByLabel('Integration API token').fill('rk_'+'test_fixture');
+    await stripe.getByRole('button',{name:'Connect and verify'}).click();
+    await stripe.getByText('Account read verified',{exact:true}).waitFor();
+    assert.deepEqual(mutations.at(-1),{url:'/api/aura/workbench/mcp/connect/stripe-sandbox',body:{token:'rk_'+'test_fixture',allowOpenLogin:false}});
+    assert.equal(await stripe.getByLabel('Integration API token').inputValue(),'');
     assert.deepEqual(errors,[]);
     await page.close();
     mutations.length=0;

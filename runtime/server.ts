@@ -80,6 +80,7 @@ import { auraTerminals } from './src/server/mcp/auraTerminals.mjs';
 import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFromRemote, readGithubPullRequest } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createPluginLogin } from './src/server/connected/pluginLogin.mjs';
+import { createGuidedMcpConnection } from './src/server/mcp/guidedMcpConnection.mjs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../agents/lib/standing-tool-authority.mjs';
 import { MCP_INTEGRATION_CATALOG, pluginLoginPreset, marketplaceEntries, financialOptions } from './src/lib/mcpIntegrationCatalog.mjs';
 import { searchPluginRegistry } from './src/server/mcp/pluginRegistry.mjs';
@@ -3553,6 +3554,21 @@ const notifyPhone = async (action) => {
     catch (error:any) { res.status(400).json({success:false,error:/^PLUGIN_REGISTRY_[A-Z0-9_]+$/.test(error?.message||'')?error.message:'PLUGIN_REGISTRY_UNAVAILABLE'}); }
   });
   app.get('/api/aura/workbench/mcp/calls', requireLocalUi, (_req, res) => res.json({ success: true, calls: mcpHost.recentCalls(50) }));
+  const guidedMcpConnect=createGuidedMcpConnection({host:mcpHost});
+  app.post('/api/aura/workbench/mcp/connect/:id',requireLocalUiSameOrigin,async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    if(!localOperatorOnly(req,res))return;
+    try{
+      const result=await guidedMcpConnect(String(req.params.id||''),req.body||{});
+      getAuraMcpFabric.invalidate();
+      seerLiveWorkstream.record({actor:'Aura Tool Fabric',type:'mcp.guided.connection',message:'MCP account read probe: '+result.id,verified:result.state==='READ_PROBE_VERIFIED',receipt:result});
+      res.json({success:true,...result});
+    }catch(error:any){
+      getAuraMcpFabric.invalidate();
+      const code=/^MCP_[A-Z0-9_]+$/.test(error?.message||'')?error.message:'MCP_GUIDED_CONNECTION_FAILED';
+      res.status(409).json({success:false,error:code});
+    }
+  });
   app.post('/api/aura/workbench/mcp/servers', requireLocalUi, (req, res) => {
     if (!localOperatorOnly(req, res)) return;
     try {

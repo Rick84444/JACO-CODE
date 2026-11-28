@@ -15,6 +15,11 @@ on:
       - 'runtime/src/components/EconomyView.tsx'
       - 'skills/commercial-opportunity-cycle/SKILL.md'
       - 'runtime/src/server/mcp/stdioMcpHost.mjs'
+      - 'runtime/src/server/mcp/httpMcpClient.mjs'
+      - 'runtime/src/server/mcp/guidedMcpConnection.mjs'
+      - 'agents/lib/secret-store.mjs'
+      - 'agents/lib/vault-tools.mjs'
+      - 'tests/nova/guided-mcp-connection.test.mjs'
       - 'runtime/src/server/connected/pluginLogin.mjs'
       - 'tests/nova/plugin-login.test.mjs'
       - 'runtime/src/server/mcp/pluginRegistry.mjs'
@@ -36,7 +41,7 @@ on:
       - 'runtime/package*.json'
       - '.github/workflows/subscription-provider-gate.yml'
   push:
-    branches: [main, 'spec/extend-subscription-access']
+    branches: [main, 'spec/extend-subscription-access', 'spec/complete-mcp-onboarding']
     paths:
       - 'runtime/src/components/BrainLogin.tsx'
       - 'runtime/src/components/ProviderConnect.tsx'
@@ -50,6 +55,11 @@ on:
       - 'runtime/src/components/EconomyView.tsx'
       - 'skills/commercial-opportunity-cycle/SKILL.md'
       - 'runtime/src/server/mcp/stdioMcpHost.mjs'
+      - 'runtime/src/server/mcp/httpMcpClient.mjs'
+      - 'runtime/src/server/mcp/guidedMcpConnection.mjs'
+      - 'agents/lib/secret-store.mjs'
+      - 'agents/lib/vault-tools.mjs'
+      - 'tests/nova/guided-mcp-connection.test.mjs'
       - 'runtime/src/server/connected/pluginLogin.mjs'
       - 'tests/nova/plugin-login.test.mjs'
       - 'runtime/src/server/mcp/pluginRegistry.mjs'
@@ -104,8 +114,10 @@ jobs:
           node --check runtime/src/lib/mcpIntegrationCatalog.mjs
           node --check runtime/src/server/mcp/pluginRegistry.mjs
           node --check runtime/src/server/mcp/stdioMcpHost.mjs
+          node --check runtime/src/server/mcp/httpMcpClient.mjs
+          node --check runtime/src/server/mcp/guidedMcpConnection.mjs
       - name: OAuth, stream and CLI safety contracts (fixtures only)
-        run: node --test tests/nova/cli-brains.test.mjs tests/nova/chatgpt-plan-transport.test.mjs tests/nova/provider-key.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/github-actions.test.mjs tests/nova/plugin-login.test.mjs tests/nova/mcp-integration-catalog.test.mjs tests/nova/plugin-registry.test.mjs
+        run: node --test tests/nova/cli-brains.test.mjs tests/nova/chatgpt-plan-transport.test.mjs tests/nova/provider-key.test.mjs tests/nova/aura-provider-registry.test.mjs tests/nova/github-actions.test.mjs tests/nova/plugin-login.test.mjs tests/nova/mcp-integration-catalog.test.mjs tests/nova/plugin-registry.test.mjs tests/nova/guided-mcp-connection.test.mjs
   provider-ui:
     runs-on: ubuntu-latest
     timeout-minutes: 20

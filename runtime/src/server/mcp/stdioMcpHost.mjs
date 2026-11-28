@@ -16,8 +16,8 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 import path from 'node:path';
-import { HttpMcpClient } from './httpMcpClient.mjs';
-import { MCP_INTEGRATION_CATALOG, catalogDefinitionMatches, pluginLoginPreset } from '../../lib/mcpIntegrationCatalog.mjs';
+import { HttpMcpClient, mcpCredential } from './httpMcpClient.mjs';
+import { MCP_INTEGRATION_CATALOG, catalogDefinitionMatches, pluginLoginPreset, isGuidedCredentialRef, guidedCredentialMatches } from '../../lib/mcpIntegrationCatalog.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
 // Classify a failed MCP child without leaking its stderr, which may contain
@@ -186,11 +186,14 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
   for (const [id, s] of Object.entries(custom)) {
     if (!ID.test(id)) continue;
     if (s === null || s.enabled === false) { delete servers[id]; continue; }
+    if(id==='stripe-sandbox'&&s.transport!=='http'){servers[id]={name:'Stripe Sandbox',role:'',transport:'http',validationError:'MCP_CONFIGURATION_INVALID'};continue;}
     if (s.transport === 'http') {
       try {
       const url = new URL(s.url);
       if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
       if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
+      if((id==='stripe-sandbox'||isGuidedCredentialRef(s.tokenEnv))&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
+      if(s.tokenEnv==='STRIPE_SANDBOX_PROBE_KEY')throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
       servers[id] = withAccess({ name: String(s.name || id), role: String(s.role || ''), transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, allowOpenLogin: s.allowOpenLogin === true, icon: id === 'huggingface' ? 'huggingface' : undefined }, s);
       } catch { servers[id] = { name: String(s.name || id), role: '', transport: 'http', validationError: 'MCP_CONFIGURATION_INVALID' }; }
       continue;
@@ -235,8 +238,11 @@ export function validateServerEntry(id, s = {}) {
     const url = new URL(String(s.url || ''));
     if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
     if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
+    if((id==='stripe-sandbox'||isGuidedCredentialRef(s.tokenEnv))&&!guidedCredentialMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv}))throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
+    if(s.tokenEnv==='STRIPE_SANDBOX_PROBE_KEY')throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
     return { ...common, transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, ...(s.allowOpenLogin === true ? {allowOpenLogin:true} : {}) };
   }
+  if(id==='stripe-sandbox')throw Error('MCP_CREDENTIAL_SCOPE_INVALID');
   const command = String(s.command || '').trim();
   if (!command || command.length > 300) throw Error('MCP_COMMAND_REQUIRED');
   if (!Array.isArray(s.args) || s.args.length > 40) throw Error('MCP_ARGS_INVALID');
@@ -474,6 +480,11 @@ export class StdioMcpHost {
     return c;
   }
 
+  // Retire the session and its current-account evidence without rewriting configuration.
+  resetConnection(id) {
+    this.clients.get(id)?.stop(); this.clients.delete(id); this.stats.delete(id);
+  }
+
   // Status without starting anything: what the IDE shows on every refresh.
   status() {
     const root = mcpAuthorityRoot(this);
@@ -498,7 +509,7 @@ export class StdioMcpHost {
       });
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
         credentialEnv: def.tokenEnv || undefined,
-        credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
+        credentialConfigured: def.tokenEnv ? Boolean(mcpCredential(id,def)) : null,
         allowOpenLogin: def.allowOpenLogin === true,
         catalogMatch: MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?catalogDefinitionMatches(id,def):undefined,
         loginOpeningSupported: Boolean(pluginLoginPreset(id,def)),
@@ -568,7 +579,7 @@ export class StdioMcpHost {
       // Never retry a call after entering the transport. A remote error string
       // is not evidence that dispatch did not occur.
       const result = await c.request('tools/call', { name, arguments: args }, timeoutMs);
-      done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300) : null);
+      done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? (c.def.transport==='http'?'MCP_REMOTE_TOOL_ERROR':String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300)) : null);
       return result;
     } catch (e) {
       const message = String(e.message || e).slice(0,300); done('failed',message);
