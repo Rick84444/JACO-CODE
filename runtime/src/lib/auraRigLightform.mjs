@@ -1116,7 +1116,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     behaviorEngine=createBehaviorEngine();
     const bodyRig=anatomical?createAuraBodyRig(model,bones):null;
     const human=anatomical?createHumanBehavior():null;
-    secondaryRig=anatomical?createSecondaryRig(scene,model,bones):null;
+    secondaryRig=anatomical?createSecondaryRig(scene,model,bones,renderer,isMobile):null;
 
     // Pre-allocated spring state objects (zero array allocations per frame)
     const yawSpring={val:0,vel:0};
@@ -1355,11 +1355,12 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         canvas.dataset.bodyFrame=wide.toFixed(3);
       }
       if(secondaryRig){
-        const secondary=secondaryRig.update({yaw,pitch,z:bodyPose?.rootZ||0,flex:Math.max(bodyPose?.gesture||0,Math.abs(bodyPose?.swing||0)*3),wide:bodyPose?.wide||0,leftLift:bodyPose?.leftLift||0,rightLift:bodyPose?.rightLift||0},rawDt/1000,still);
+        const secondary=secondaryRig.update({yaw,pitch,z:bodyPose?.rootZ||0,flex:Math.max(bodyPose?.gesture||0,Math.abs(bodyPose?.swing||0)*3),wide:bodyPose?.wide||0,quality:qualityTier,leftLift:bodyPose?.leftLift||0,rightLift:bodyPose?.rightLift||0},rawDt/1000,still);
         canvas.dataset.hairSway=[secondary.front,secondary.back,secondary.side].map(x=>x.toFixed(3)).join(',');
         canvas.dataset.hairMorphMeshes=String(secondary.hairMeshes);
         canvas.dataset.textileResponseMaterials=String(secondary.textileMaterials);
         canvas.dataset.groundContact=String(secondary.ground);
+        canvas.dataset.floorReflection=secondary.reflection?'planar':'adaptive-fallback';
       }
       model.updateMatrixWorld(true);
 

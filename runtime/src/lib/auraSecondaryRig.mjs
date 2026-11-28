@@ -1,7 +1,9 @@
+import {createStudioReflection} from './auraStudioFloor.mjs';
 import * as THREE from 'three';
 import {createSecondaryMotion,contactShadow} from './auraSecondaryMotion.mjs';
 const HAIR=['HairFrontSway','HairBackSway','HairSideSway'];
-export function createSecondaryRig(scene,model,bones){
+export function createSecondaryRig(scene,model,bones,renderer,mobile){
+  const reflection=createStudioReflection(scene,renderer,mobile);
   const motion=createSecondaryMotion();
   const hair=[];const textiles=new Set();
   model.traverse(o=>{
@@ -31,7 +33,8 @@ export function createSecondaryRig(scene,model,bones){
     for(const o of hair)for(let i=0;i<3;i++)o.morphTargetInfluences[o.morphTargetDictionary[HAIR[i]]]=[p.front,p.back,p.side][i];
     for(const {m,roughness} of bases)m.roughness=Math.min(1,Math.max(0,roughness-p.fabric*.055));
     const wide=reduced?0:Math.min(1,Math.max(0,input.wide||0));
-    floor.visible=wide>.01;floor.material.opacity=wide*.86;
+    const reflected=reflection.update(wide,input.quality||0);
+    floor.visible=wide>.01&&!reflected;floor.material.opacity=wide*.86;
     model.updateMatrixWorld(true);
     shadows.forEach(({entry,mesh,mat},i)=>{
       if(!entry||wide<.01){mesh.visible=false;return;}
@@ -40,9 +43,10 @@ export function createSecondaryRig(scene,model,bones){
       mesh.visible=true;mesh.position.set(position.x,.010,position.z);
       mesh.scale.setScalar(h.scale);mat.uniforms.opacity.value=h.opacity*wide;
     });
-    return {hairMeshes:hair.length,textileMaterials:bases.length,front:p.front,back:p.back,side:p.side,ground:floor.visible};
+    return {hairMeshes:hair.length,textileMaterials:bases.length,front:p.front,back:p.back,side:p.side,ground:floor.visible||reflected,reflection:reflected};
   },dispose(){
     for(const {m,roughness} of bases)m.roughness=roughness;
+    reflection.dispose();
     scene.remove(floor,...shadows.map(x=>x.mesh));floor.geometry.dispose();floor.material.dispose();geo.dispose();for(const x of shadows)x.mat.dispose();
   }};
 }

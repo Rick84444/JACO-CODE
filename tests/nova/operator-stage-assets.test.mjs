@@ -23,6 +23,7 @@ for (const [rel, text] of Object.entries({
   'node_modules/three/build/three.core.js': 'export const REVISION = "stand-in";',
   'node_modules/three/examples/jsm/loaders/GLTFLoader.js': "import { Loader } from 'three';\nimport { clone } from '../utils/SkeletonUtils.js';\nexport class GLTFLoader extends Loader {}",
   'node_modules/three/examples/jsm/utils/SkeletonUtils.js': 'export const clone = x => x;',
+  'node_modules/three/examples/jsm/objects/Reflector.js': 'export class Reflector {}',
   'node_modules/three/examples/jsm/utils/BufferGeometryUtils.js': 'export const toTrianglesDrawMode = x => x;',
 })) { fs.mkdirSync(path.dirname(path.join(fixtureRoot, rel)), { recursive: true }); fs.writeFileSync(path.join(fixtureRoot, rel), text); }
 const assets = operatorStageAssets(fixtureRoot);
@@ -134,4 +135,11 @@ test('all shared motion and speech dependencies including the binary model are s
   const model=assets.resolve('/vendor/vendor/headaudio/model-en-mixed.bin');
   assert.equal(model.type,'application/octet-stream');assert.equal(assets.read(model).length,14352);
   assert.equal(assets.resolve('/vendor/vendor/headaudio/../secret.bin'),null);
+});
+
+test('planar reflection dependency ships with stage and resolves bare three imports',async()=>{
+  const {THREE_FILES}=await import('../../runtime/scripts/build-operator-stage.mjs');
+  assert.ok(THREE_FILES['vendor/three/addons/objects/Reflector.js']);
+  assert.ok(assets.resolve('/vendor/three/addons/objects/Reflector.js'));
+  assert.match(assets.read(assets.resolve('/vendor/auraStudioFloor.mjs')).toString(),/\/vendor\/three\/addons\/objects\/Reflector\.js/);
 });

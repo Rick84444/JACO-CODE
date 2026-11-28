@@ -28,6 +28,7 @@ export const THREE_FILES = {
   'vendor/three/addons/loaders/GLTFLoader.js': 'examples/jsm/loaders/GLTFLoader.js',
   'vendor/three/addons/utils/BufferGeometryUtils.js': 'examples/jsm/utils/BufferGeometryUtils.js',
   'vendor/three/addons/utils/SkeletonUtils.js': 'examples/jsm/utils/SkeletonUtils.js',
+  'vendor/three/addons/objects/Reflector.js': 'examples/jsm/objects/Reflector.js',
   'vendor/three/LICENSE': 'LICENSE',
 };
 
