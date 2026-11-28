@@ -4,6 +4,9 @@ import {createHumanBehavior} from './auraHumanBehavior.mjs';
 import {createAuraBodyRig} from './auraBodyRig.mjs';
 import {VISEMES,emptySpeechPose,sampleSpeechPose,approachSpeechPose,createNaturalBlink,validSpeechTimeline} from './auraSpeechTimeline.mjs';
 import * as THREE from 'three';
+// Embedded textures load as image elements: the default loader fetches blob: URLs, which the page's
+// connect-src 'self' refuses, and the model then renders untextured (observed 2026-11-28 on the Operator Stage).
+const imageElementLoader=()=>new GLTFLoader().register(parser=>{parser.textureLoader=new THREE.TextureLoader(parser.options.manager);return {name:'JACO_image_element_textures'};});
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
@@ -26,7 +29,7 @@ async function loadAvatar(signal){
         const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
         if(hash!==V31_SHA256)throw Error('AURA_V31_HASH');
       }
-      return {gltf:await new GLTFLoader().parseAsync(bytes,''),anatomical:true};
+      return {gltf:await imageElementLoader().parseAsync(bytes,''),anatomical:true};
     }
     if(!response.ok&&response.status!==404)throw Error('AURA_V31_HTTP_'+response.status);
   }catch(error){
@@ -37,7 +40,7 @@ async function loadAvatar(signal){
   if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
   const bytes=await response.arrayBuffer();
   if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
-  return {gltf:await new GLTFLoader().parseAsync(bytes,''),anatomical:false};
+  return {gltf:await imageElementLoader().parseAsync(bytes,''),anatomical:false};
 }
 const FRAME_TIME=1000/30;
 function seeded(seed){let s=seed>>>0;return()=>((s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296);}
