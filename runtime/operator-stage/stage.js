@@ -266,7 +266,7 @@ const voice = (() => {
       let next = synth(parts[0].text);
       for (let i = 0; i < parts.length; i++) {
         const part = await next; if (current !== handle) return;
-        index=i;
+        index=i;aura.expression('neutral');
         if (i + 1 < parts.length) { next = synth(parts[i + 1].text); next.catch(() => {}); }
         await play(part); if (current !== handle) return;
       }

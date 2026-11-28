@@ -149,7 +149,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
         if (utterance.current === handle && !['canceled', 'interrupted'].includes(event.error)) setVoiceError(true);
         finish();
       };
-      handle.cancel = () => { try { synthesis.cancel(); } catch { /* Engine unavailable. */ } };
+      const cancelAudio=handle.cancel;
+      handle.cancel = () => { cancelAudio();try { synthesis.cancel(); } catch { /* Engine unavailable. */ } };
       try { synthesis.speak(reply); } catch { setVoiceError(true); finish(); }
     };
     utterance.current = handle;
@@ -171,7 +172,6 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     audio.onplay = () => {
       if (utterance.current !== handle) return;
       setSpeaking(true);
-      rig.current?.setState({presentationTone:'neutral'});
       gate.play(token,cueIndex,parts[cueIndex]?.cues);
       let tap: MediaStream | null=null;
       try{tap=(audio as HTMLAudioElement & {captureStream?:()=>MediaStream}).captureStream?.()??null;}catch{/* PCM analysis works without captureStream. */}
@@ -185,10 +185,13 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
         if(!timeline||controller.signal.aborted||utterance.current!==handle||generation!==partGeneration)return;
         rig.current?.setState({speechPlayback:{audio,timeline}});
       });
-      audio.onended = () => {clearPlayback();resolve();};
-      audio.onerror = () => {clearPlayback();reject(new Error('VOICE_PLAYBACK_FAILED'));};
-      audio.src = part.url;
-      audio.play().catch(error=>{clearPlayback();reject(error);});
+      const finish=(error?:unknown)=>{controller.signal.removeEventListener('abort',cancel);clearPlayback();error?reject(error):resolve();};
+      const cancel=()=>finish(new Error('VOICE_CANCELLED'));
+      controller.signal.addEventListener('abort',cancel,{once:true});
+      audio.onended=()=>finish();
+      audio.onerror=()=>finish(new Error('VOICE_PLAYBACK_FAILED'));
+      audio.src=part.url;
+      audio.play().catch(finish);
     });
     void (async () => {
       let started = false;
@@ -199,7 +202,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
           const part = await next;
           if (utterance.current !== handle) return;
           // Prefetch the following sentence while this one plays.
-          cueIndex=index;
+          cueIndex=index;rig.current?.setState({presentationTone:'neutral'});
           if (index + 1 < parts.length) { next = synthesize(parts[index + 1].text); next.catch(() => {}); }
           await playPart(part);
           started = true;

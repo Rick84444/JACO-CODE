@@ -1,7 +1,7 @@
 import {speechParts} from './speechParts.mjs';
 import {extractWorkspaceActions,workspaceReplyText,STAGE_PANELS,STAGE_MOTIONS} from './workspaceActions.mjs';
 export const PRESENTATION_TONES=Object.freeze(['neutral','warm','focused','concerned']);
-export const PERFORMANCE_INSTRUCTION='For natural presentation, put an optional [[jaco:expression warm|focused|concerned|neutral]] on its own line immediately before the sentence it describes (choose one value, not the list). Put focus and motion directives immediately before the relevant spoken sentence. Use at most two focus/expression cues and one motion per answer, only when useful. Never use these inside examples or code. These cues describe presentation only, not feelings, facts, tool permissions or completion.';
+export const PERFORMANCE_INSTRUCTION='For natural presentation, put an optional [[jaco:expression warm|focused|concerned|neutral]] on its own line immediately before the sentence it describes (choose one value, not the list). Put focus and motion directives immediately before the relevant spoken sentence. Use at most three cues total, including at most one motion per answer, only when useful. Never use these inside examples or code. These cues describe presentation only, not feelings, facts, tool permissions or completion.';
 // A speech plan is transient. A directive is a cue for the next spoken segment,
 // never a shell action, free-form animation or permission to operate the device.
 export function createPerformancePlan(raw,{allowStage=true,enabled=true}={}){

@@ -1138,7 +1138,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     let last=-Infinity,lastStepTime=0;
     let state={
       active:false,speaking:false,listening:false,
-      cognitivePhase:null,
+      cognitivePhase:null,presentationTone:'neutral',
       x:0,y:0,audioLevel:null,phonemes:null,speechPlayback:null
     };
     const temp=new THREE.Vector3(),q=new THREE.Quaternion(),euler=new THREE.Euler(0,0,0,'YXZ');
