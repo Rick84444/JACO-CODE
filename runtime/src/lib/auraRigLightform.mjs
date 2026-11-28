@@ -1,3 +1,4 @@
+import {createSecondaryRig} from './auraSecondaryRig.mjs';
 import {createV31OpticalRig} from './auraV31OpticalRig.mjs';
 import {createHumanBehavior} from './auraHumanBehavior.mjs';
 import {createAuraBodyRig} from './auraBodyRig.mjs';
@@ -1030,7 +1031,7 @@ function disposeModel(model){
 export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,stars=true}={}){
   const {gltf,anatomical}=await loadAvatar(signal);
   const model=gltf.scene;
-  let renderer,geometry,material,observer,domTelemetryObserver,lightBody,voiceTracker,qualityGovernor,behaviorEngine,raf=0,disposed=false;
+  let renderer,geometry,material,observer,domTelemetryObserver,lightBody,voiceTracker,qualityGovernor,behaviorEngine,secondaryRig,raf=0,disposed=false;
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
   let cleanup=()=>{};
   try{
@@ -1113,6 +1114,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     behaviorEngine=createBehaviorEngine();
     const bodyRig=anatomical?createAuraBodyRig(model,bones):null;
     const human=anatomical?createHumanBehavior():null;
+    secondaryRig=anatomical?createSecondaryRig(scene,model,bones):null;
 
     // Pre-allocated spring state objects (zero array allocations per frame)
     const yawSpring={val:0,vel:0};
@@ -1263,7 +1265,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       rotate('LeftShoulder',still?0:.016*breath,0,-.009*breath);
       rotate('RightShoulder',still?0:.016*breath+.003,0,.009*breath);
 
-      for(let j=0;j<4;j++){
+      if(!secondaryRig)for(let j=0;j<4;j++){
         const lag=j*.46;
         rotate(j?'Ponytail'+j:'PonytailRoot',
           still?0:humanPose?humanPose.hairPitch*(1+j*.18):.046*Math.sin(t*1.14-lag)-pitch*.13,
@@ -1349,6 +1351,13 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         canvas.dataset.bodyAction=bodyPose.action||'idle';
         canvas.dataset.bodyTravel=offset.toFixed(3);
         canvas.dataset.bodyFrame=wide.toFixed(3);
+      }
+      if(secondaryRig){
+        const secondary=secondaryRig.update({yaw,pitch,z:bodyPose?.rootZ||0,flex:Math.max(bodyPose?.gesture||0,Math.abs(bodyPose?.swing||0)*3),wide:bodyPose?.wide||0,leftLift:bodyPose?.leftLift||0,rightLift:bodyPose?.rightLift||0},rawDt/1000,still);
+        canvas.dataset.hairSway=[secondary.front,secondary.back,secondary.side].map(x=>x.toFixed(3)).join(',');
+        canvas.dataset.hairMorphMeshes=String(secondary.hairMeshes);
+        canvas.dataset.textileResponseMaterials=String(secondary.textileMaterials);
+        canvas.dataset.groundContact=String(secondary.ground);
       }
       model.updateMatrixWorld(true);
 
@@ -1439,7 +1448,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       window.removeEventListener('jaco:cognitive-phase',onMissionEvent);
       motion.removeEventListener('change',refresh);document.removeEventListener('visibilitychange',refresh);
       canvas.removeEventListener('webglcontextlost',lost);signal?.removeEventListener('abort',dispose);
-      voiceTracker?.dispose();lightBody?.dispose();geometry.dispose();material.dispose();renderer.dispose();disposeModel(model);
+      voiceTracker?.dispose();secondaryRig?.dispose();lightBody?.dispose();geometry.dispose();material.dispose();renderer.dispose();disposeModel(model);
     }
     cleanup=dispose;
     window.addEventListener('pointermove',onPointerMove,{passive:true});
@@ -1468,7 +1477,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       dispose
     };
   }catch(error){
-    if(!disposed){cleanup();if(!disposed){disposed=true;voiceTracker?.dispose();lightBody?.dispose();geometry?.dispose();material?.dispose();renderer?.dispose();disposeModel(model);}}
+    if(!disposed){cleanup();if(!disposed){disposed=true;voiceTracker?.dispose();secondaryRig?.dispose();lightBody?.dispose();geometry?.dispose();material?.dispose();renderer?.dispose();disposeModel(model);}}
     throw error;
   }
 }

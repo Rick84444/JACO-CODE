@@ -21,6 +21,8 @@ export const AURA_STAGE_FILES=Object.freeze({
   "vendor/auraHumanBehavior.mjs": "src/lib/auraHumanBehavior.mjs",
   "vendor/auraOptics.mjs": "src/lib/auraOptics.mjs",
   "vendor/auraV31OpticalRig.mjs": "src/lib/auraV31OpticalRig.mjs",
+  "vendor/auraSecondaryMotion.mjs": "src/lib/auraSecondaryMotion.mjs",
+  "vendor/auraSecondaryRig.mjs": "src/lib/auraSecondaryRig.mjs",
   "vendor/vendor/headaudio/LICENSE": "src/lib/vendor/headaudio/LICENSE",
   "vendor/vendor/headaudio/NOTICE.md": "src/lib/vendor/headaudio/NOTICE.md",
   "vendor/vendor/headaudio/classifier.mjs": "src/lib/vendor/headaudio/classifier.mjs",
