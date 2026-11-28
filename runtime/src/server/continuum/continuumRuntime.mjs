@@ -11,6 +11,7 @@ import { AutonomousCycleLeaseBridge } from './autonomousCycleLeaseBridge.mjs';
 import { assessOperationalAccountability } from './operationalAccountability.mjs';
 import { RuntimeHub } from './runtimeHub.mjs';
 import { KnowledgeStore } from './knowledgeStore.mjs';
+import { seedEngineeringKnowledge } from './engineeringKnowledge.mjs';
 import { CognitiveGraphProjection } from './cognitiveGraphProjection.mjs';
 import { HypothesisEngine } from './hypothesisEngine.mjs';
 import { CapabilityCompiler } from './capabilityCompiler.mjs';
@@ -47,6 +48,7 @@ export class ContinuumRuntime {
     this.autonomousCycles=new AutonomousCycleLeaseBridge({workspaceRoot:this.workspaceRoot,leases:this.leases,operator:this.operator,events:this.events});
     this.hub=new RuntimeHub(this.root,this.events,this.evidence);
     this.knowledge=new KnowledgeStore(this.root,this.events,this.evidence);
+    seedEngineeringKnowledge(this.knowledge);
     this.hypotheses=new HypothesisEngine(this.root,this.events,this.evidence);
     this.skills=new SkillRuntime({
       workspaceRoot:this.workspaceRoot,
