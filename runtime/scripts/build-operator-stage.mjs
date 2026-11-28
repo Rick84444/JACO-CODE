@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { RIG_MODULES } from '../operator-stage/assets.mjs';
 
 const runtime = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(runtime, 'dist', 'operator-stage');
@@ -19,6 +20,7 @@ export const STAGE_FILES = {
   'vendor/aura-rig.mjs': 'src/lib/auraRigLightform.mjs',
   'vendor/workspace-actions.mjs': 'src/lib/workspaceActions.mjs',
   'vendor/speech-parts.mjs': 'src/lib/speechParts.mjs',
+  ...Object.fromEntries(RIG_MODULES.map(name => ['vendor/' + name, 'src/lib/' + name])),
 };
 export const THREE_FILES = {
   'vendor/three/build/three.module.js': 'build/three.module.js',

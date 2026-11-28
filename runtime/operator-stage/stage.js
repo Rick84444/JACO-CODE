@@ -9,14 +9,26 @@ import { init as initSetup } from '/setup.js';
 const $ = id => document.getElementById(id);
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// ---------- Aura: her 3D lightform (the IDE portrait's rig) ----------
+// ---------- Aura: her 3D model, or the lightform when no verified model is installed (the IDE portrait's rig) ----------
 // She looks at the panel she works in, then back at the operator (eye contact); she does not follow the mouse.
 const aura = (() => {
   let rig = null, fallback = null, idle = 0, held = false, gazeTimer = 0;
   const state = { active: false, speaking: false, listening: false, x: 0, y: 0 };
   const apply = () => rig?.setState({ active: state.active });
   import('/vendor/aura-rig.mjs')
-    .then(({ createAuraRigLightform }) => createAuraRigLightform($('orb'), { trackPointer: false, stars: false, onError: () => { fallback ??= particleOrb(); } }))
+    .then(async ({ createAuraRigLightform }) => {
+      const options = { trackPointer: false, stars: false, onError: () => { fallback ??= particleOrb(); } };
+      try {
+        const model = await createAuraRigLightform($('orb'), { ...options, anatomical: true, framing: 'full', backdrop: false });
+        document.body.classList.add('full-body');
+        return model;
+      } catch (error) {
+        console.warn('Aura model unavailable, showing the lightform:', error?.message || error);
+        // A fresh canvas: the failed attempt may already hold this one's WebGL context.
+        const used = $('orb'), canvas = used.cloneNode(); used.replaceWith(canvas);
+        return createAuraRigLightform(canvas, options);
+      }
+    })
     .then(instance => { rig = instance; rig.setState(state); })
     .catch(error => { console.warn('Aura rig unavailable, using particle fallback:', error?.message || error); fallback ??= particleOrb(); });
   return {
@@ -32,7 +44,9 @@ const aura = (() => {
     lookAt(el, ms = 2400) {
       const c = $('orb').getBoundingClientRect(), r = el.getBoundingClientRect();
       const x = Math.max(-1, Math.min(1, ((r.left + r.width / 2) - (c.left + c.width / 2)) / (innerWidth / 2)));
-      const y = Math.max(-1, Math.min(1, ((r.top + r.height / 2) - (c.top + c.height / 2)) / (innerHeight / 2)));
+      // Seen whole, her eyes are near the top of the canvas, not in its middle.
+      const eyes = document.body.classList.contains('full-body') ? 0.1 : 0.5;
+      const y = Math.max(-1, Math.min(1, ((r.top + r.height / 2) - (c.top + c.height * eyes)) / (innerHeight / 2)));
       rig?.setState({ x, y });
       clearTimeout(gazeTimer); gazeTimer = setTimeout(() => rig?.setState({ x: 0, y: 0 }), ms);
     },
@@ -41,6 +55,7 @@ const aura = (() => {
 
 function particleOrb() {
   // A fresh canvas: one that already handed out a WebGL context cannot give a 2D one.
+  document.body.classList.remove('full-body');
   const used = $('orb'), canvas = used.cloneNode(); used.replaceWith(canvas);
   const ctx = canvas.getContext('2d');
   const N = 700, pts = Array.from({ length: N }, (_, i) => {

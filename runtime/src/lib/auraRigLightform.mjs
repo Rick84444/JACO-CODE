@@ -4,7 +4,7 @@ import {createIceCavern,createCavernAvatar,cavernGovernor} from './auraCavern.mj
 import {bodyMotion,approachAngle} from './auraBodyMotion.mjs';
 import {createBlinkController,approachFacialWeight} from './auraFacialDynamics.mjs';
 import {createConversationBehavior} from './auraConversationBehavior.mjs';
-import {fetchAnatomicalAsset} from './auraAnatomicalAsset.mjs';
+import {fetchAnatomicalAsset,fullBodyDistance} from './auraAnatomicalAsset.mjs';
 import {createHeadAudioBridge,HEAD_AUDIO_VISEMES,hasHeadAudioVisemes} from './auraHeadAudio.mjs';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
@@ -1006,9 +1006,9 @@ function disposeModel(model){
 /**
  * GPU point drawing; exact zero-allocation CPU interpolation of vertices after real morph and skin transforms.
  * @param {HTMLCanvasElement} canvas
- * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, cavern?: boolean, anatomical?: boolean, stars?: boolean, framing?: 'full'|'portrait'}} [options]
+ * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, cavern?: boolean, anatomical?: boolean, stars?: boolean, framing?: 'full'|'portrait', backdrop?: boolean}} [options]
  */
-export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,cavern=false,anatomical=false,stars=true,framing='full'}={}){
+export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,cavern=false,anatomical=false,stars=true,framing='full',backdrop=true}={}){
   if(anatomical&&cavern)throw Error('AURA_RIG_MODE_CONFLICT');
   const fullBody=cavern||anatomical;
   // Head-and-shoulders view of the anatomical model, framed like the lightform portrait. The camera aims at the
@@ -1022,7 +1022,10 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     bytes=await response.arrayBuffer();
     if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
   }
-  const gltf=await new GLTFLoader().parseAsync(bytes,'');
+  // Embedded textures are loaded as image elements: the default loader fetches blob: URLs, which the page's
+  // connect-src 'self' refuses, and the model then renders without textures.
+  const loader=new GLTFLoader().register(parser=>{parser.textureLoader=new THREE.TextureLoader(parser.options.manager);return {name:'JACO_image_element_textures'};});
+  const gltf=await loader.parseAsync(bytes,'');
   const model=gltf.scene;
   let renderer,geometry,material,observer,domTelemetryObserver,lightBody,iceWorld,voiceTracker,qualityGovernor,behaviorEngine,raf=0,disposed=false;
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -1085,14 +1088,22 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       // The Head bone sits at the base of the skull; the face centre is a few centimetres above it.
       headAim=headWorld.y+.06;
     }
+    // The whole figure is framed from its own measured bounds (skinning included), whatever the model's height.
+    let figure=null;
+    if(anatomical&&!closeUp){
+      model.updateMatrixWorld(true);
+      const box=new THREE.Box3().setFromObject(model);
+      figure={size:box.getSize(new THREE.Vector3()),center:box.getCenter(new THREE.Vector3()),front:box.max.z};
+    }
     canvas.dataset.framing=closeUp?'portrait':fullBody?'full':'portrait';
     camera.position.set(0,1.570,1.05);camera.lookAt(0,1.540,.03);
-    renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:!fullBody,powerPreference:'low-power',preserveDrawingBuffer:!fullBody});
+    renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:anatomical||!fullBody,powerPreference:'low-power',preserveDrawingBuffer:!fullBody});
     renderer.setClearColor(0x000000,0);
 
     if(anatomical){
       // Preserve source textures, skinning, morphs and separate eye/hair/garment meshes.
-      scene.background=new THREE.Color(0x101923);
+      // A page with its own background behind Aura (the Operator Stage) passes backdrop:false.
+      if(backdrop)scene.background=new THREE.Color(0x101923);
       renderer.toneMapping=THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure=1.05;
       const hemisphere=new THREE.HemisphereLight(0xe4edff,0x596271,1.35);
@@ -1255,9 +1266,8 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         camera.position.set(camX*.5,headAim+.03+camY,1.05);
         camera.lookAt(0,headAim,.03);
       }else if(anatomical){
-        // V4 measured rest bounds: y=-.002..1.782 m; allow head/hand clearance.
-        const distance=Math.max(2.95,1.9/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*Math.min(1,camera.aspect))+.3);
-        camera.position.set(camX*.7,.90,distance+.15);camera.lookAt(0,.90,.04);
+        const distance=fullBodyDistance({height:figure.size.y,width:figure.size.x,aspect:camera.aspect,fovDeg:camera.fov});
+        camera.position.set(figure.center.x+camX*.7,figure.center.y,figure.front+distance);camera.lookAt(figure.center);
       }else if(cavern){
         const distance=Math.max(3.15,3.15/Math.min(1,camera.aspect));
         camera.position.set(camX*3.2,1.02+camY*2,distance);
@@ -1402,10 +1412,13 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     };
 
     const budgetSettings=()=>cavernBudget.settings(Boolean(state.active||busPhase==='analyzing'||busPhase==='verifying'));
+    // The textured figure keeps at least one drawn pixel per screen pixel: the budget's lower steps made her blocky.
+    // The frame rate still follows the budget.
+    const fullBodyDpr=()=>Math.min(window.devicePixelRatio||1,anatomical?Math.max(1,budgetSettings().dpr):budgetSettings().dpr);
     const render=time=>{
       if(disposed||document.hidden)return;
       if(fullBody){
-        const settings=budgetSettings(),dpr=Math.min(window.devicePixelRatio||1,settings.dpr);
+        const settings=budgetSettings(),dpr=fullBodyDpr();
         if(lastDpr!==dpr){renderer.setPixelRatio(dpr);lastDpr=dpr;}
         canvas.dataset.frameBudget=String(settings.fps);
       }
@@ -1426,7 +1439,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     const resize=()=>{
       if(disposed)return;
       const width=Math.max(1,canvas.clientWidth||360),height=Math.max(1,canvas.clientHeight||width);
-      const dpr=Math.min(window.devicePixelRatio||1,fullBody?budgetSettings().dpr:1.5);
+      const dpr=fullBody?fullBodyDpr():Math.min(window.devicePixelRatio||1,1.5);
       lastDpr=dpr;renderer.setPixelRatio(dpr);renderer.setSize(width,height,false);
       camera.aspect=width/height;camera.updateProjectionMatrix();material.uniforms.uPixelRatio.value=dpr;
       if(motion.matches)render(0);
