@@ -60,7 +60,9 @@ export function createHumanBehavior(seed=0xa031){
       out.mode=mode;out.headYaw=headX;out.headPitch=headY+nod;out.headRoll=clamp(-headX*.09+(mode==='listening'?.018:0),-.06,.06);
       out.eyeX=clamp((attentionX-headX)*1.6,-.38,.38);out.eyeY=clamp((attentionY-headY)*1.5,-.22,.22);
       out.brow=clamp((mode==='decision'?.075:mode==='listening'?.035:0)+accent*.065,0,.15);
-      out.smile=mode==='listening'?.05:mode==='speaking'?.018+accent*.018:.028;
+      const tone=mode==='speaking'?input.presentationTone:'neutral';
+      out.smile=mode==='listening'?.05:mode==='speaking'?(tone==='warm'?.055:tone==='concerned'?.009:.018)+accent*.018:.028;
+      if(tone==='focused'||tone==='concerned')out.brow=clamp(out.brow+.025,0,.15);
       out.cheek=clamp(out.smile*.4+accent*.027,0,.085);
       out.breath=breath;out.handBeat=mode==='speaking'?pulse(time,accentAt+.07,.65)*accentPeak:0;
       out.weight=weight;out.hairYaw=hairX;out.hairPitch=hairY;out.accent=accent;

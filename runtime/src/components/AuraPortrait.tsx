@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { workspaceReplyText } from '../lib/workspaceActions.mjs';
-import { speechParts } from '../lib/speechParts.mjs';
+import { takePerformancePlan, createCueGate } from '../lib/auraPerformance.mjs';
 import { analyzeAuraSpeech } from '../lib/auraSpeechAnalysis.mjs';
 
 export interface AuraPortraitChat {
@@ -107,6 +107,12 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       try { previous.cancel(); } catch { /* Already stopped. */ }
     }
     const text = workspaceReplyText(latestReply.content);
+    const plan=takePerformancePlan(latestReply.id,text);
+    const gate=createCueGate((cue:{type:string;value:string})=>{
+      if(cue.type==='motion')rig.current?.requestMotion(cue.value);
+      if(cue.type==='expression')rig.current?.setState({presentationTone:cue.value});
+    });
+    const token=gate.begin();let cueIndex=0;
     // Aura's own female neural voice (the same engine as her voice notes), played through an audio element so
     // the rig's formant tracker drives her mouth from the real sound. The browser voice is only a fallback.
     // Spoken sentence by sentence: the next part is synthesized while the current one plays, so Aura starts
@@ -118,6 +124,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const clearPlayback=()=>{partGeneration++;rig.current?.setState({audioSource:null,speechPlayback:null});};
     const handle = {
       cancel: () => {
+        gate.cancel();rig.current?.setState({presentationTone:'neutral'});
         controller.abort();
         audio.pause();
         urls.forEach(u => URL.revokeObjectURL(u));
@@ -128,6 +135,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       if (utterance.current !== handle) return;
       utterance.current = null;
       setSpeaking(false);
+      gate.cancel();rig.current?.setState({presentationTone:'neutral'});
       clearPlayback();
       urls.forEach(u => URL.revokeObjectURL(u));
     };
@@ -145,7 +153,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       try { synthesis.speak(reply); } catch { setVoiceError(true); finish(); }
     };
     utterance.current = handle;
-    const parts = speechParts(text);
+    const parts=plan.parts;
     const synthesize = (part: string) => fetch('/api/aura/voice/speak', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
       body: JSON.stringify({ text: part, lang: locale }),
@@ -163,6 +171,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     audio.onplay = () => {
       if (utterance.current !== handle) return;
       setSpeaking(true);
+      rig.current?.setState({presentationTone:'neutral'});
+      gate.play(token,cueIndex,parts[cueIndex]?.cues);
       let tap: MediaStream | null=null;
       try{tap=(audio as HTMLAudioElement & {captureStream?:()=>MediaStream}).captureStream?.()??null;}catch{/* PCM analysis works without captureStream. */}
       rig.current?.setState({ audioSource: tap, speaking: true });
@@ -184,12 +194,13 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       let started = false;
       if (!parts.length) { finish(); return; }
       try {
-        let next = synthesize(parts[0]);
+        let next = synthesize(parts[0].text);
         for (let index = 0; index < parts.length; index++) {
           const part = await next;
           if (utterance.current !== handle) return;
           // Prefetch the following sentence while this one plays.
-          if (index + 1 < parts.length) { next = synthesize(parts[index + 1]); next.catch(() => {}); }
+          cueIndex=index;
+          if (index + 1 < parts.length) { next = synthesize(parts[index + 1].text); next.catch(() => {}); }
           await playPart(part);
           started = true;
           if (utterance.current !== handle) return;

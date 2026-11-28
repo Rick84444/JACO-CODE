@@ -88,6 +88,7 @@ import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-se
 import { auraAlwaysAnswers, answerInOrder, auraChatDeadlines, auraStatusReply, chatBudget } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { WORKSPACE_CONTROL_INSTRUCTION, STAGE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
+import { PERFORMANCE_INSTRUCTION } from "./src/lib/auraPerformance.mjs";
 import { operatorStageAssets } from "./operator-stage/assets.mjs";
 import { webSearch } from "./src/server/mcp/webSearch.mjs";
 import { geminiSpeak } from "./src/server/connected/geminiVoice.mjs";
@@ -5639,9 +5640,9 @@ const notifyPhone = async (action) => {
       const ragContext = [...(Array.isArray(req.body.ragContext) ? req.body.ragContext : []), ...attachmentContext(req.body.attachmentIds)];
       // The local GUI can show views and files Aura asks for while she talks (display only, never execution).
       const chatSource = req.body?.connectedSession?.source;
-      if (chatSource === 'Aura GUI') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: WORKSPACE_CONTROL_INSTRUCTION } });
+      if (chatSource === 'Aura GUI') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: WORKSPACE_CONTROL_INSTRUCTION + ' ' + PERFORMANCE_INSTRUCTION } });
       // The Operator Stage: Aura lights up the panel she is talking about (display only, never execution).
-      else if (chatSource === 'Aura Operator Stage') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: STAGE_CONTROL_INSTRUCTION } });
+      else if (chatSource === 'Aura Operator Stage') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: STAGE_CONTROL_INSTRUCTION + ' ' + PERFORMANCE_INSTRUCTION } });
       const userMsg = String(message || "Hi");
       const cognitiveActivation = cognitiveActivationPreview(userMsg, {
         knowledge: continuumSurface.runtime.knowledge,

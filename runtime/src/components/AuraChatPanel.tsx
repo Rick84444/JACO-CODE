@@ -18,6 +18,7 @@ import { StandingMandatePanel } from './StandingMandatePanel';
 import { AuraOverview } from './AuraOverview';
 import { boundChatHistory } from '../lib/chatHistory.mjs';
 import { extractWorkspaceActions, workspaceReplyText } from '../lib/workspaceActions.mjs';
+import { rememberPerformancePlan } from '../lib/auraPerformance.mjs';
 import { CHAT_FEED_PAGE, chatFeedWindow, isLongChatMessage } from '../lib/chatFeedWindow.mjs';
 
 // Decorative only: the existing chat request lifecycle is the source of truth.
@@ -542,7 +543,8 @@ export const AuraChatPanel: React.FC<Props> = ({ session, runControls, approvalP
       if(!rawAnswer) throw new Error(tr('Modellen returnerade ett tomt svar.', 'The model returned an empty response.'));
       // Aura may ask the workspace to show a view, the terminal or a file; the GUI performs it and hides the directive.
       const workspace=extractWorkspaceActions(rawAnswer);
-      for(const action of workspace.actions) window.dispatchEvent(new CustomEvent('jaco:workspace-action',{detail:action}));
+      for(const action of workspace.actions) if(action.type!=='motion'&&action.type!=='focus'&&!data.degraded&&!data.replayed)window.dispatchEvent(new CustomEvent('jaco:workspace-action',{detail:action}));
+      rememberPerformancePlan(`${user.id}:reply`,rawAnswer,!data.degraded&&!data.replayed);
       const answer=workspaceReplyText(rawAnswer);
       await appendMessage({
         id: `${user.id}:reply`,

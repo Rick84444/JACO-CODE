@@ -1237,7 +1237,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const inputX=Math.abs(state.x)>0.01?finiteClamp(state.x,-1,1,0):pointerX;
       const inputY=Math.abs(state.y)>0.01?finiteClamp(state.y,-1,1,0):pointerY;
 
-      const humanPose=human?.update({phase,active:state.active,speaking:state.speaking,listening:state.listening,level:currentAudioLevel,x:inputX,y:inputY},dt,still);
+      const humanPose=human?.update({presentationTone:state.presentationTone,phase,active:state.active,speaking:state.speaking,listening:state.listening,level:currentAudioLevel,x:inputX,y:inputY},dt,still);
       const contact=leadWithEyes&&state.listening&&!still;
       const contactAge=contact?Math.max(0,t-listeningSince):0;
       const follow=smoothstep(.22,.90,contactAge);

@@ -2,8 +2,8 @@
 // what she works with: the strategy board, her browser and the tools she calls. A panel lights up blue while she
 // uses it or talks about it, then fades; she looks at it, then back at the operator. Everything shown comes from
 // real runtime receipts (MCP call log, live mission stream, gameboard, browser frames) and the IDE's chat session.
-import { extractWorkspaceActions, workspaceReplyText } from '/vendor/workspace-actions.mjs';
-import { speechParts } from '/vendor/speech-parts.mjs';
+import { workspaceReplyText } from '/vendor/workspace-actions.mjs';
+import { createPerformancePlan, createCueGate } from '/vendor/auraPerformance.mjs';
 import { analyzeAuraSpeech } from '/vendor/auraSpeechAnalysis.mjs';
 import { init as initSetup } from '/setup.js';
 
@@ -13,7 +13,7 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // ---------- Aura: her 3D lightform (the IDE portrait's rig) ----------
 // She looks at the panel she works in, then back at the operator (eye contact); she does not follow the mouse.
 const aura = (() => {
-  let rig = null, fallback = null, idle = 0, held = false, gazeTimer = 0;
+  let rig = null, fallback = null, idle = 0, held = false, gazeTimer = 0, speechGaze = false;
   const state = { active: false, speaking: false, listening: false, x: 0, y: 0 };
   const apply = () => rig?.setState({ active: state.active });
   import('/vendor/aura-rig.mjs')
@@ -30,15 +30,19 @@ const aura = (() => {
     voice(stream,playing=Boolean(stream)) { state.speaking=playing; rig?.setState({audioSource:stream||null,speaking:playing,...(!playing?{speechPlayback:null}:{})});fallback?.pulse(playing?.4:0); },
     speechPlayback(audio,timeline){rig?.setState({speechPlayback:timeline?{audio,timeline}:null});},
     motion(action){return rig?.requestMotion(action)===true;},
+    expression(value){rig?.setState({presentationTone:value});},
+    clearPresentation(){speechGaze=false;clearTimeout(gazeTimer);rig?.setState({x:0,y:0,presentationTone:'neutral'});},
     present(el){if(!el)return false;const a=$('orb').getBoundingClientRect(),b=el.getBoundingClientRect();return rig?.requestMotion(b.left+b.width/2<a.left+a.width/2?'present-left':'present-right')===true;},
     listening(on) { state.listening = on; rig?.setState({ listening: on }); },
     // Turn toward an element on screen, hold, then look straight ahead again.
-    lookAt(el, ms = 2400) {
+    lookAt(el, ms = 2400, priority=false) {
+      if(speechGaze&&!priority)return;
+      if(priority)speechGaze=true;
       const c = $('orb').getBoundingClientRect(), r = el.getBoundingClientRect();
       const x = Math.max(-1, Math.min(1, ((r.left + r.width / 2) - (c.left + c.width / 2)) / (innerWidth / 2)));
       const y = Math.max(-1, Math.min(1, ((r.top + r.height / 2) - (c.top + c.height / 2)) / (innerHeight / 2)));
       rig?.setState({ x, y });
-      clearTimeout(gazeTimer); gazeTimer = setTimeout(() => rig?.setState({ x: 0, y: 0 }), ms);
+      clearTimeout(gazeTimer); gazeTimer = setTimeout(() => {speechGaze=false;rig?.setState({x:0,y:0});}, ms);
     },
   };
 })();
@@ -115,12 +119,12 @@ function addLine(id, text, tone = '', { max = 9, quiet = false } = {}) {
 }
 // What Aura is talking about: enlarged with a glow, turned toward her, until the conversation moves on.
 let focusTimer = 0;
-function focus(ids, { by = 'aura' } = {}) {
+function focus(ids, { by = 'aura', speech = false } = {}) {
   const wanted = new Set(ids.filter(id => PANELS[id]).slice(0, 2));
   if (!wanted.size) return;
   for (const h of holos.values()) h.el.classList.toggle('focus', wanted.has(h.id));
   for (const id of wanted) holo(id).el.classList.add('focus');
-  aura.lookAt(holo([...wanted][0]).el, 3000);
+  aura.lookAt(holo([...wanted][0]).el, 3000, speech||by==='operator');
   if (wanted.has('browser')) refreshBrowserView();
   if (wanted.has('mission')) { boardKey = ''; refreshBoard(); } // replay the strategy line when it is shown
   clearTimeout(focusTimer);
@@ -232,17 +236,18 @@ const voice = (() => {
   let readAloud = stored('jaco.stage.voice'), current = null;
   const show = () => $('voice').setAttribute('aria-pressed', String(readAloud));
   show();
-  function stop() { const c = current; current = null; try { c?.cancel(); } catch { /* already stopped */ } aura.voice(null); }
+  function stop() { const c = current; current = null; try { c?.cancel(); } catch { /* already stopped */ } aura.voice(null);aura.clearPresentation(); }
   // Sentence by sentence: the next one is synthesized while the current one plays, so she starts quickly.
-  async function speak(text,onFirstPlay=()=>{}) {
+  async function speak(plan,onCue=()=>{}) {
     stop();
-    const parts = speechParts(text); if (!parts.length) return;
+    const {text,parts}=plan;if(!parts.length)return;
     const lang = /[åäö]|\b(och|jag|det|är|inte|du|har)\b/i.test(text) ? 'sv-SE' : 'en-US';
     const controller = new AbortController(), audio = new Audio(), urls = [];
-    let generation=0,first=true;
+    let generation=0,index=0;
+    const gate=createCueGate(onCue),token=gate.begin();
     const clear=()=>{generation++;aura.speechPlayback(null,null);};
-    const cue=()=>{if(first){first=false;onFirstPlay();}};
-    const handle = { cancel() { controller.abort(); audio.pause(); clear();urls.forEach(u => URL.revokeObjectURL(u)); } };
+    const cue=()=>gate.play(token,index,parts[index]?.cues);
+    const handle = { cancel() { gate.cancel();controller.abort(); audio.pause(); clear();urls.forEach(u => URL.revokeObjectURL(u)); } };
     current = handle;
     const synth = part => fetch('/api/aura/voice/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ text: part, lang }) })
       .then(async r=>{if(!r.ok)throw Error('VOICE_UNAVAILABLE');const blob=await r.blob();if(controller.signal.aborted)throw Error('VOICE_CANCELLED');const url=URL.createObjectURL(blob);urls.push(url);return {url,analysis:analyzeAuraSpeech(blob,controller.signal)};});
@@ -250,19 +255,23 @@ const voice = (() => {
     const play=part=>new Promise((resolve,reject)=>{
       clear();const g=generation;
       void part.analysis.then(timeline=>{if(timeline&&current===handle&&g===generation&&!controller.signal.aborted)aura.speechPlayback(audio,timeline);});
-      audio.onended=()=>{clear();aura.voice(null);resolve();};
-      audio.onerror=()=>{clear();reject(Error('VOICE_PLAYBACK_FAILED'));};
-      audio.src=part.url;audio.play().catch(reject);
+      const finish=error=>{controller.signal.removeEventListener('abort',cancel);clear();error?reject(error):resolve();};
+      const cancel=()=>finish(Error('VOICE_CANCELLED'));
+      controller.signal.addEventListener('abort',cancel,{once:true});
+      audio.onended=()=>{aura.voice(null);finish();};
+      audio.onerror=()=>finish(Error('VOICE_PLAYBACK_FAILED'));
+      audio.src=part.url;audio.play().catch(finish);
     });
     try {
-      let next = synth(parts[0]);
+      let next = synth(parts[0].text);
       for (let i = 0; i < parts.length; i++) {
         const part = await next; if (current !== handle) return;
-        if (i + 1 < parts.length) { next = synth(parts[i + 1]); next.catch(() => {}); }
+        index=i;
+        if (i + 1 < parts.length) { next = synth(parts[i + 1].text); next.catch(() => {}); }
         await play(part); if (current !== handle) return;
       }
     } catch (error) { if (!controller.signal.aborted) note(`Aura's voice was unavailable (${error?.message || error}).`); }
-    finally { if (current === handle) {cue();current=null;clear();aura.voice(null);urls.forEach(u => URL.revokeObjectURL(u));} }
+    finally { if (current === handle) {gate.cancel();current=null;clear();aura.voice(null);aura.clearPresentation();urls.forEach(u => URL.revokeObjectURL(u));} }
   }
   $('voice').addEventListener('click', () => { readAloud = !readAloud; store('jaco.stage.voice', readAloud); show(); if (!readAloud) stop(); });
   return { speak, stop, get on() { return readAloud; }, set on(v) { readAloud = v; store('jaco.stage.voice', v); show(); }, get speaking() { return Boolean(current); } };
@@ -346,7 +355,12 @@ async function send(text) {
   if (MENTIONS.mission.test(text) || /vad (händer|gör du)|what are you doing|what's happening/i.test(text)) focus(['mission']);
   const thinking = message('assistant', 'Aura is thinking…'); thinking.classList.add('thinking');
   $('auraLine').textContent = 'Thinking…';
-  let answer = '',motionCue=()=>{};
+  let answer='',plan=null;
+  const perform=cue=>{
+    if(cue.type==='focus'){focus([cue.value],{speech:true});aura.present(holos.get(cue.value)?.el);}
+    else if(cue.type==='motion')aura.motion(cue.value);
+    else if(cue.type==='expression')aura.expression(cue.value);
+  };
   try {
     await api('/api/aura/chat/session/messages', { id, role: 'user', content: text });
     const data = await api('/api/aura/chat', {
@@ -356,16 +370,13 @@ async function send(text) {
     history.push({ role: 'user', content: text });
     const raw = String(data.reply || data.text || '').trim();
     if (!raw) throw new Error('The model returned an empty response.');
-    const { actions } = extractWorkspaceActions(raw);
-    answer = workspaceReplyText(raw);
+    plan=createPerformancePlan(raw,{enabled:!data.degraded&&!data.replayed});
+    answer=plan.text;
     const meta = [data.degraded ? 'status reply, no model answered' : null, data.modelUsed || [data.provider, data.model].filter(Boolean).join('/'), `${((performance.now() - started) / 1000).toFixed(1)} s`].filter(Boolean).join(' · ');
     thinking.remove(); message('assistant', answer, meta);
-    const asked = actions.filter(a => a.type === 'focus').map(a => a.panel);
-    const panels=asked.length?asked:mentioned(answer);
-    focus(panels);
-    const motion=actions.find(a=>a.type==='motion')?.motion;
-    const shown=panels[0]&&holos.get(panels[0])?.el;
-    motionCue=()=>{if(motion)aura.motion(motion);else if(shown)aura.present(shown);};
+    if(!data.degraded&&!data.replayed&&!plan.parts.some(p=>p.cues.some(c=>c.type==='focus'))){
+      const panels=mentioned(answer);if(panels.length&&plan.parts[0])plan.parts[0].cues.unshift({type:'focus',value:panels[0]});
+    }
     history.push({ role: 'assistant', content: answer });
     api('/api/aura/chat/session/messages', { id: `${id}:reply`, role: 'assistant', content: answer, meta }).catch(() => message('system', 'The reply is shown but could not be saved.'));
   } catch (error) {
@@ -374,7 +385,7 @@ async function send(text) {
     if (!$('input').value) $('input').value = text;
   } finally { busy = false; $('send').disabled = false; aura.hold(false); $('auraLine').textContent = 'Here with you'; }
   // She answers aloud, then listens again when the operator is talking with her.
-  if(answer){if(voice.on)await voice.speak(answer,motionCue);else motionCue();}
+  if(answer&&plan){if(voice.on)await voice.speak(plan,perform);else for(const cue of plan.parts[0]?.cues||[])perform(cue);}
   listen();
 }
 $('composer').addEventListener('submit', e => {
