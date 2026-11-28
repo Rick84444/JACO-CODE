@@ -31,6 +31,9 @@ export function createRenderLink(pool,key){
             return;
           }
           if(ws.readyState!==1)return;
+          if(!Number.isFinite(attachment.expiresAt)||attachment.expiresAt<=Date.now()){
+            ws.close(4003,'Credential expired');return;
+          }
           for(const prior of sockets){
             const a=prior.deserializeAttachment?.();
             if(a?.role==='host'&&a.deviceId===attachment.deviceId)prior.close(4001,'Host replaced');
@@ -40,6 +43,10 @@ export function createRenderLink(pool,key){
       }else sockets.add(ws);
       ws.on('message',(data,binary)=>{if(binary){ws.close(1003,'Text required');return;}
         serial(id,()=>{
+          // ws.close() starts an asynchronous handshake; the close event may
+          // not have removed the socket yet. Never dispatch queued messages
+          // after revocation, replacement or the start of closing.
+          if(ws.readyState!==1)return;
           if(!sockets.has(ws)){ws.close(4003,'Host not admitted');return;}
           return handler.webSocketMessage(ws,data.toString('utf8'));
         }).catch(()=>ws.close(1011,'Link error'));
