@@ -3,7 +3,7 @@
 // uses it or talks about it, then fades; she looks at it, then back at the operator. Everything shown comes from
 // real runtime receipts (MCP call log, live mission stream, gameboard, browser frames) and the IDE's chat session.
 import { extractWorkspaceActions, workspaceReplyText } from '/vendor/workspace-actions.mjs';
-import { speechParts } from '/vendor/speech-parts.mjs';
+import { speechParts, pcmSamples } from '/vendor/speech-parts.mjs';
 import { init as initSetup } from '/setup.js';
 
 const $ = id => document.getElementById(id);
@@ -75,6 +75,7 @@ const holos = new Map();
 function holo(id) {
   if (holos.has(id)) return holos.get(id);
   const spec = PANELS[id];
+  if (!spec) throw new Error('UNKNOWN_PANEL ' + id);
   const el = document.createElement('section');
   el.className = 'holo' + (spec.board ? ' board' : '') + (spec.view ? ' browser' : ''); el.dataset.panel = id; el.tabIndex = 0;
   el.setAttribute('aria-label', spec.title);
@@ -229,21 +230,68 @@ const voice = (() => {
   const show = () => $('voice').setAttribute('aria-pressed', String(readAloud));
   show();
   function stop() { const c = current; current = null; try { c?.cancel(); } catch { /* already stopped */ } aura.voice(null); }
+  // The sound output is opened by a press or a key (browsers refuse it otherwise) and then kept.
+  let sound = null;
+  const wake = () => { try { sound ??= new AudioContext({ sampleRate: 24000 }); if (sound.state === 'suspended') void sound.resume(); } catch { sound = null; } };
+  addEventListener('pointerdown', wake, true); addEventListener('keydown', wake, true);
+  // Plays each part while it is still being generated. Returns how many parts were heard, so the caller can speak
+  // the rest from whole files if streaming is not available.
+  async function speakStreamed(parts, lang, handle, controller) {
+    wake();
+    if (!sound) return 0;
+    await Promise.race([sound.resume().catch(() => {}), new Promise(r => setTimeout(r, 300))]);
+    if (sound.state !== 'running') return 0;
+    const out = sound.createGain(), tap = sound.createMediaStreamDestination(), sources = new Set();
+    out.connect(sound.destination); out.connect(tap);
+    handle.onCancel.push(() => { sources.forEach(s => { try { s.stop(); } catch { /* ended */ } }); out.disconnect(); });
+    const request = part => fetch('/api/aura/voice/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ text: part, lang }) });
+    let at = 0, next = request(parts[0]), heard = 0, started = false;
+    for (let i = 0; i < parts.length; i++) {
+      let pieces = 0;
+      try {
+        const response = await next;
+        if (!response.ok || !response.body) break;
+        const reader = response.body.getReader();
+        let carry = null;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (current !== handle) return parts.length;
+          if (done) break;
+          // The next part is asked for as soon as this one starts, so there is no pause between them.
+          if (!pieces++ && i + 1 < parts.length) { next = request(parts[i + 1]); next.catch(() => {}); }
+          const read = pcmSamples(carry, value); carry = read.carry;
+          if (!read.samples.length) continue;
+          const buffer = sound.createBuffer(1, read.samples.length, 24000); buffer.copyToChannel(read.samples, 0);
+          const source = sound.createBufferSource(); source.buffer = buffer; source.connect(out);
+          at = Math.max(at, sound.currentTime + 0.05); source.start(at); at += buffer.duration;
+          sources.add(source); source.onended = () => sources.delete(source);
+          if (!started) { started = true; aura.voice(tap.stream); }
+        }
+      } catch (error) { if (controller.signal.aborted) return parts.length; if (!pieces) break; }
+      if (!pieces) break;
+      heard = i + 1;
+    }
+    // Wait until the last scheduled sound has played.
+    while (current === handle && sound.currentTime < at) await new Promise(r => setTimeout(r, 100));
+    return heard;
+  }
   // Sentence by sentence: the next one is synthesized while the current one plays, so she starts quickly.
   async function speak(text) {
     stop();
     const parts = speechParts(text); if (!parts.length) return;
     const lang = /[åäö]|\b(och|jag|det|är|inte|du|har)\b/i.test(text) ? 'sv-SE' : 'en-US';
     const controller = new AbortController(), audio = new Audio(), urls = [];
-    const handle = { cancel() { controller.abort(); audio.pause(); urls.forEach(u => URL.revokeObjectURL(u)); } };
+    const handle = { onCancel: [], cancel() { controller.abort(); audio.pause(); this.onCancel.forEach(f => f()); urls.forEach(u => URL.revokeObjectURL(u)); } };
     current = handle;
     const synth = part => fetch('/api/aura/voice/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ text: part, lang }) })
       .then(async r => { if (!r.ok) throw new Error('VOICE_UNAVAILABLE'); const u = URL.createObjectURL(await r.blob()); urls.push(u); return u; });
     audio.onplay = () => { if (current === handle) aura.voice(audio.captureStream?.() ?? null); };
     const play = url => new Promise((resolve, reject) => { audio.onended = resolve; audio.onerror = () => reject(new Error('VOICE_PLAYBACK_FAILED')); audio.src = url; audio.play().catch(reject); });
     try {
-      let next = synth(parts[0]);
-      for (let i = 0; i < parts.length; i++) {
+      const from = await speakStreamed(parts, lang, handle, controller);
+      if (current !== handle || from >= parts.length) return;
+      let next = synth(parts[from]);
+      for (let i = from; i < parts.length; i++) {
         const url = await next; if (current !== handle) return;
         if (i + 1 < parts.length) { next = synth(parts[i + 1]); next.catch(() => {}); }
         await play(url); if (current !== handle) return;
@@ -390,6 +438,55 @@ async function pollCalls() {
   setTimeout(pollCalls, 1000);
 }
 
+// ---------- Aura's terminals: one window per name, with what ran there ----------
+const shownTerminals = new Map();
+async function pollTerminals() {
+  if (document.hidden) return void setTimeout(pollTerminals, 1500);
+  try {
+    const data = await (await fetch('/api/aura/terminals', { cache: 'no-store' })).json();
+    const names = new Set();
+    for (const [index, t] of (data.terminals || []).entries()) {
+      const id = 'term:' + t.name; names.add(id);
+      const stamp = t.entries.at(-1)?.at;
+      if (!stamp || shownTerminals.get(id) === stamp) continue;
+      PANELS[id] ??= { title: 'Terminal: ' + t.name, rail: index % 2 ? 'railLeft' : 'railRight' };
+      const first = !shownTerminals.has(id); shownTerminals.set(id, stamp);
+      const h = holo(id); h.list.replaceChildren();
+      for (const e of t.entries.slice(-3)) {
+        addLine(id, '$ ' + e.command, e.ok ? 'ok' : 'fail', { max: 12, quiet: true });
+        for (const line of e.output.split('\n').filter(Boolean).slice(-3)) addLine(id, line, '', { max: 12, quiet: true });
+      }
+      if (!first || Date.now() - Date.parse(stamp) < 20000) activate(id);
+    }
+    // A window the runtime no longer keeps is closed here too.
+    for (const id of [...shownTerminals.keys()]) if (!names.has(id)) { shownTerminals.delete(id); holos.get(id)?.el.remove(); holos.delete(id); delete PANELS[id]; }
+  } catch { /* the runtime may be restarting; keep polling */ }
+  setTimeout(pollTerminals, 1500);
+}
+
+// ---------- The pages open in Aura's browser ----------
+async function refreshTabs() {
+  const h = holos.get('browser'); if (!h || document.hidden) return;
+  try {
+    const data = await (await fetch('/api/aura/browser/tabs', { cache: 'no-store' })).json();
+    let strip = h.el.querySelector('.tabs');
+    if (!strip) { strip = document.createElement('div'); strip.className = 'tabs'; h.el.querySelector('.holo-view').before(strip); }
+    const tabs = data.tabs || [];
+    strip.hidden = tabs.length < 2;
+    strip.replaceChildren(...tabs.map(t => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = t.title || t.url; b.title = t.url;
+      b.setAttribute('aria-pressed', String(t.current));
+      b.addEventListener('click', async e => {
+        e.stopPropagation();
+        await fetch('/api/aura/browser/tabs/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: t.id }) });
+        await refreshTabs(); refreshBrowserView();
+      });
+      return b;
+    }));
+  } catch { /* the browser or the runtime may be away */ }
+}
+setInterval(refreshTabs, 5000);
+
 // ---------- Source 2: what Aura's browser shows (a read of her pinned page) ----------
 let viewBusy = false, lastFrameUrl = null, lastFrameAt = 0;
 async function refreshBrowserView() {
@@ -517,5 +614,5 @@ $('ideResize').addEventListener('pointerdown', e => {
 
 holo('mission'); holo('tools');
 addEventListener('jaco:model-changed', () => void header());
-header(); loadHistory(); pollCalls(); connectLive(); refreshBoard(); void initSetup();
+header(); loadHistory(); pollTerminals(); pollCalls(); connectLive(); refreshBoard(); void initSetup();
 $('input').focus();

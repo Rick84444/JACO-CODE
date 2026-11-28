@@ -74,3 +74,63 @@ export async function geminiSpeak(text, { apiKey, economic, voice, lang, fetchIm
   const rate = Number(/rate=(\d+)/.exec(String(audio.mimeType || ''))?.[1]) || SAMPLE_RATE;
   return pcmToWav(Buffer.from(audio.data, 'base64'), rate);
 }
+
+// Streamed speech: the first sound arrives while the rest is generated (measured 2026-11-27: 1.7-2.1 s to first
+// sound against 2.9-5.4 s for a whole file). Only the 3.8 Flash speech model streams and supports Swedish.
+export const GEMINI_TTS_STREAM_MODEL = 'gemini-3.8-flash-tts';
+/** USD per million tokens, Google's published rates: the introductory price ends 2026-12-31. */
+export const geminiStreamPrice = (at = Date.now()) => (at < Date.parse('2027-01-01T00:00:00Z') ? { input: 0.5, output: 9 } : { input: 1, output: 18 });
+
+/**
+ * @param {string} text
+ * @param {{ apiKey: string, economic: any, onChunk: (pcm: Buffer) => void, voice?: string, lang?: string, fetchImpl?: typeof fetch, now?: () => number }} options
+ * Raw 24 kHz mono 16-bit little-endian sound goes to onChunk as it arrives. Resolves when the whole text is spoken.
+ */
+export async function geminiSpeakStream(text, { apiKey, economic, onChunk, voice = 'Kore', lang = 'sv-SE', fetchImpl = fetch, now = Date.now }) {
+  if (!apiKey) throw Error('GEMINI_KEY_MISSING');
+  const price = geminiStreamPrice(now()), quote = geminiVoiceQuote(text);
+  const auth = economic.authorizeCloud({ estimatedUsd: (quote.inputTokens * price.input + quote.outputTokens * price.output) / 1e6, purpose: 'manual-aura-chat',
+    metadata: { providerId: 'gemini', model: GEMINI_TTS_STREAM_MODEL, purposeDetail: 'aura-voice', promptBytes: Buffer.byteLength(text), providerInvoiceVerified: false } });
+  if (!auth.allowed) throw Error('GEMINI_VOICE_DENIED:' + auth.reason);
+  const style = lang.startsWith('sv') ? 'Natural Swedish, calm, warm and clear' : 'Natural, calm, warm and clear';
+  let response;
+  try {
+    response = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/interactions', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(60000),
+      body: JSON.stringify({ model: GEMINI_TTS_STREAM_MODEL, stream: true, response_format: { type: 'audio' }, generation_config: { speech_config: [{ voice }] },
+        input: [{ type: 'user_input', content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style }] }] }] }),
+    });
+  } catch (error) {
+    economic.markCloudOutcomeUnknown(auth.reservationId, 'gemini voice request failed after dispatch');
+    throw Error('GEMINI_VOICE_UNREACHABLE:' + (error?.name || 'Error'));
+  }
+  if (!response.ok) {
+    economic.releaseReservation(auth.reservationId, `gemini voice HTTP ${response.status} without generation`);
+    throw Error('GEMINI_VOICE_HTTP_' + response.status);
+  }
+  let buffer = '', spoken = 0, usage = null, completed = false;
+  const decoder = new TextDecoder();
+  const read = block => {
+    const data = block.split(/\r?\n/).filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('');
+    if (!data || data === '[DONE]') return;
+    const event = JSON.parse(data);
+    if (event.delta?.type === 'audio' && event.delta.data) { const pcm = Buffer.from(event.delta.data, 'base64'); spoken += pcm.length; onChunk(pcm); }
+    if (event.event_type === 'interaction.completed') completed = true;
+    usage = event.interaction?.usage || event.usage || usage;
+  };
+  try {
+    for await (const chunk of response.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let end;
+      while ((end = /\r?\n\r?\n/.exec(buffer))) { read(buffer.slice(0, end.index)); buffer = buffer.slice(end.index + end[0].length); }
+    }
+  } catch {
+    economic.markCloudOutcomeUnknown(auth.reservationId, 'gemini voice stream broke off');
+    throw Error('GEMINI_VOICE_INCOMPLETE');
+  }
+  const input = Number(usage?.total_input_tokens), output = Number(usage?.total_output_tokens);
+  if (Number.isFinite(input) && Number.isFinite(output)) economic.settleCloud(auth.reservationId, (input * price.input + output * price.output) / 1e6, usage);
+  else economic.markCloudOutcomeUnknown(auth.reservationId, 'gemini voice usage missing');
+  if (!completed) throw Error('GEMINI_VOICE_INCOMPLETE');
+  if (!spoken) throw Error('GEMINI_VOICE_EMPTY');
+}

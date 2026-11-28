@@ -35,3 +35,17 @@ export function speechParts(text) {
   }
   return parts;
 }
+
+/**
+ * 16-bit little-endian mono sound to the numbers the browser plays. A network piece can end in the middle of a
+ * sample; that byte is carried to the next piece.
+ * @param {Uint8Array | null} carry @param {Uint8Array} chunk
+ * @returns {{ samples: Float32Array, carry: Uint8Array | null }}
+ */
+export function pcmSamples(carry, chunk) {
+  const bytes = carry ? new Uint8Array([...carry, ...chunk]) : chunk;
+  const count = bytes.length >> 1, samples = new Float32Array(count);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let i = 0; i < count; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
+  return { samples, carry: bytes.length % 2 ? bytes.slice(-1) : null };
+}

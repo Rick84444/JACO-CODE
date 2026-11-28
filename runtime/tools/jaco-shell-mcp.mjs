@@ -17,7 +17,7 @@ import { SafeShell } from '../../agents/lib/safe-shell.mjs';
 const workspace = path.resolve(process.env.JACO_SHELL_WORKSPACE || process.env.JACO_WORKSPACE_ROOT || process.cwd());
 const shell = new SafeShell({ workspace });
 const text = value => JSON.stringify(value, null, 2);
-const argSchema = { command: { type: 'string', description: 'the program, e.g. "git", or the whole command as one string, e.g. "git status --short" (no shell: pipes, ; && and $() are refused)' }, args: { type: 'array', items: { type: 'string' }, description: 'its arguments, one string each' }, cwd: { type: 'string', description: 'folder inside the workspace (default: the workspace)' } };
+const argSchema = { terminal: { type: 'string', maxLength: 24, description: 'name of the terminal this runs in, for example "build" or "git". Each name keeps its own working folder, and the operator sees one window per name. Use separate names for separate tasks.' }, command: { type: 'string', description: 'the program, e.g. "git", or the whole command as one string, e.g. "git status --short" (no shell: pipes, ; && and $() are refused)' }, args: { type: 'array', items: { type: 'string' }, description: 'its arguments, one string each' }, cwd: { type: 'string', description: 'folder inside the workspace (default: the workspace)' } };
 
 const TOOLS = [
   { name: 'shell_info', readOnly: true, description: 'Discover actual installed executables on the local host, the bounded shell policy list, and limits. Search by executable name or purpose; returns known uses, argument examples and execution route for PowerShell, Python, Node, Git and other tools. No commands run. Read only.',

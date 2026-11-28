@@ -76,6 +76,7 @@ import { stripeRevenueSnapshot } from "./src/server/revenue/stripeRevenue.mjs";
 import { automaticConnections } from "./src/server/connected/automaticConnections.mjs";
 import { liteChatAnswer } from "./src/server/connected/liteChatRouter.mjs";
 import { StdioMcpHost, isReadOnlyTool as isReadOnlyMcpTool } from "./src/server/mcp/stdioMcpHost.mjs";
+import { auraTerminals } from './src/server/mcp/auraTerminals.mjs';
 import { discoverAuraMcpTools, callAuraMcpTool, readPublicViaMcp, githubRepoFromRemote, readGithubPullRequest } from './src/server/mcp/auraAgentMcpCall.mjs';
 import { createGithubAuth } from "./src/server/github/githubAuth.mjs";
 import { createPluginLogin } from './src/server/connected/pluginLogin.mjs';
@@ -90,7 +91,7 @@ import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { WORKSPACE_CONTROL_INSTRUCTION, STAGE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
 import { operatorStageAssets } from "./operator-stage/assets.mjs";
 import { webSearch } from "./src/server/mcp/webSearch.mjs";
-import { geminiSpeak } from "./src/server/connected/geminiVoice.mjs";
+import { geminiSpeak, geminiSpeakStream } from "./src/server/connected/geminiVoice.mjs";
 import { createStackRepair } from "./src/server/connected/stackRepair.mjs";
 import { createPiperVoice } from "./src/server/connected/piperVoice.mjs";
 import { renewStandingGrants } from "./src/server/desktop/grantAtStart.mjs";
@@ -1094,6 +1095,27 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
       catch (error: any) { failures.push(String(error?.message || 'VOICE_FAILED').slice(0, 80)); }
     }
     res.status(503).json({ success: false, error: failures.join('; ').slice(0, 200) || 'VOICE_UNAVAILABLE' });
+  });
+  // The same voice as it is generated: raw 24 kHz sound in pieces. A failure before the first piece answers 503, and
+  // the page then asks /voice/speak for a whole file.
+  app.post('/api/aura/voice/stream', requireLocalUiSameOrigin, async (req, res) => {
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (!text.trim() || text.length > 6000) return res.status(400).json({ success: false, error: 'VOICE_TEXT_INVALID' });
+    const lang = typeof req.body?.lang === 'string' && /^[a-z]{2}-[A-Z]{2}$/.test(req.body.lang) ? req.body.lang : 'sv-SE';
+    if (process.env.JACO_AURA_VOICE === 'piper' || process.env.JACO_AURA_VOICE === 'neural') return res.status(503).json({ success: false, error: 'VOICE_STREAM_NOT_CHOSEN' });
+    try {
+      // The generation is read to its end even if the listener leaves, so the cost is settled from Google's report.
+      await geminiSpeakStream(text, { apiKey: process.env.GEMINI_API_KEY || '', economic: continuumSurface.runtime.economic,
+        voice: process.env.JACO_AURA_GEMINI_VOICE || 'Kore', lang, onChunk: (pcm: Buffer) => {
+          if (res.writableEnded || res.destroyed) return;
+          if (!res.headersSent) { res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Jaco-Voice', 'gemini-stream'); res.type('audio/l16; rate=24000; channels=1'); }
+          res.write(pcm);
+        } });
+      res.end();
+    } catch (error: any) {
+      if (!res.headersSent) res.status(503).json({ success: false, error: String(error?.message || 'VOICE_FAILED').slice(0, 80) });
+      else res.destroy();
+    }
   });
   // Metadata only. Existing env, encrypted store and legacy Windows vault remain the owners.
   app.get('/api/aura/workbench/vault/discovery', requireLocalUiSameOrigin, (_req, res) => {
@@ -4652,6 +4674,34 @@ const notifyPhone = async (action) => {
     } catch (error: any) {
       return res.status(503).json({ success: false, error: String(error?.message || 'BROWSER_FRAME_FAILED').slice(0, 80) });
     }
+  });
+
+  // Aura's terminals and the pages open in her browser, for the operator's own screen.
+  app.get('/api/aura/terminals', requireLocalUiSameOrigin, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, terminals: auraTerminals.list() });
+  });
+  app.get('/api/aura/browser/tabs', requireLocalUiSameOrigin, async (_req, res) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    try {
+      const result: any = await callAuraMcpRpc('cdp', 'tools/call', { name: 'nova_tabs', arguments: {} }, AbortSignal.timeout(8000));
+      const body = JSON.parse(String(result?.content?.find?.((item: any) => item?.type === 'text')?.text || 'null'));
+      if (result?.isError === true || !Array.isArray(body?.tabs)) return res.status(409).json({ success: false, error: 'BROWSER_TABS_UNAVAILABLE' });
+      // Only the pages Aura opened: the operator's own tabs in her window stay out of this list.
+      const tabs = body.tabs.filter((t: any) => t.openedBy === 'aura' || t.current).slice(0, 8)
+        .map((t: any) => ({ id: String(t.id), title: String(t.title || '').slice(0, 80), url: String(t.url || '').slice(0, 300), current: t.current === true }));
+      res.json({ success: true, tabs });
+    } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || 'BROWSER_TABS_FAILED').slice(0, 80) }); }
+  });
+  app.post('/api/aura/browser/tabs/switch', requireLocalUiSameOrigin, async (req, res) => {
+    const id = typeof req.body?.id === 'string' && /^[A-Za-z0-9_-]{4,80}$/.test(req.body.id) ? req.body.id : '';
+    if (!id) return res.status(400).json({ success: false, error: 'BROWSER_TAB_ID_INVALID' });
+    try {
+      const result: any = await callAuraMcpRpc('cdp', 'tools/call', { name: 'nova_tab_switch', arguments: { id, actionId: `stage-${crypto.randomUUID()}` } }, AbortSignal.timeout(10000));
+      if (result?.isError === true) return res.status(409).json({ success: false, error: 'BROWSER_TAB_SWITCH_REFUSED' });
+      browserFrameCache = null;
+      res.json({ success: true });
+    } catch (error: any) { res.status(503).json({ success: false, error: String(error?.message || 'BROWSER_TAB_SWITCH_FAILED').slice(0, 80) }); }
   });
 
   // Which page Aura's browser shows (address and title only), so the operator can open it in a real window.

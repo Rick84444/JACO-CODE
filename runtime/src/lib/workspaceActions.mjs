@@ -20,6 +20,7 @@ export const STAGE_CONTROL_INSTRUCTION = [
   'When you talk about one of them, light it up by writing a directive on its own line; the stage enlarges it with a glow and hides the directive:',
   `[[jaco:focus PANEL]] where PANEL is mission (the work running now, its plan and steps), browser (the page your browser shows) or tools (the tool calls you made).`,
   'Use it when the panel helps the operator see what you mean, at most two per reply. It only changes what is shown.',
+  'You can keep several pages open (browser server: nova_tab_open, nova_tab_switch) and several terminals (shell server: give shell_run or shell_read a terminal name per task); the operator sees them beside you.',
 ].join(' ');
 
 const DIRECTIVE = /\[\[jaco:(open|terminal|file|focus)(?:\s+([^\]\r\n]{1,300}))?\]\]/gi;
