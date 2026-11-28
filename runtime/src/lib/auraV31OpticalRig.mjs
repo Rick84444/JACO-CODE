@@ -27,6 +27,8 @@ function physicalFrom(source){
   // UV mapping, depth behavior, roughness and normal map. Do not copy identity.
   const target=new THREE.MeshPhysicalMaterial();
   THREE.MeshStandardMaterial.prototype.copy.call(target,source);
+  // Standard.copy resets defines; restore the physical shader contract in r186.
+  target.defines={STANDARD:'',PHYSICAL:''};
   target.name=source.name;return target;
 }
 function installPupil(material,uniform){
