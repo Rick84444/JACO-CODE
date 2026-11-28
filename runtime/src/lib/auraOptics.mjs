@@ -26,4 +26,7 @@ export function materialRole(name){
   if(name==='Human.tongue01')return 'tongue';
   return 'authored';
 }
-export const STUDIO_LIGHT=Object.freeze({key:2.35,fill:.75,rim:1.25,ambient:.65,environment:.72,exposure:1.0,lightProxy:.48});
+// The key comes from a moderate height so brows, cheekbones and chin do not cast hard hollows; a low frontal fill
+// lifts the eyes and the underside of the chin (operator 2026-11-28). Positions are metres around the figure.
+export const STUDIO_LIGHT=Object.freeze({key:1.6,fill:1.1,front:1.0,rim:1.1,ambient:1.0,environment:.72,exposure:1.0,lightProxy:.5,
+  positions:Object.freeze({key:Object.freeze([-.8,2.55,2.1]),fill:Object.freeze([1.3,1.75,1.4]),front:Object.freeze([0,1.45,2.4]),rim:Object.freeze([-.65,2.1,-.8])})});

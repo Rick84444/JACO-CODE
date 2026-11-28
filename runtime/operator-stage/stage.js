@@ -17,7 +17,9 @@ const aura = (() => {
   const state = { active: false, speaking: false, listening: false, x: 0, y: 0 };
   const apply = () => rig?.setState({ active: state.active });
   import('/vendor/aura-rig.mjs')
-    .then(({ createAuraRigLightform }) => createAuraRigLightform($('orb'), { trackPointer: false, stars: false, onError: () => { fallback ??= particleOrb(); } }))
+    .then(({ createAuraRigLightform }) => createAuraRigLightform($('orb'), { trackPointer: false, stars: false, fullFigure: true, onError: () => { fallback ??= particleOrb(); } }))
+    // The whole figure gets the room; the legacy lightform keeps the centred portrait layout.
+    .then(instance => { if ($('orb').dataset.avatarVersion === 'V31') document.body.classList.add('full-body'); return instance; })
     .then(instance => { rig = instance; rig.setState(state); })
     .catch(error => { console.warn('Aura rig unavailable, using particle fallback:', error?.message || error); fallback ??= particleOrb(); });
   return {
@@ -40,7 +42,9 @@ const aura = (() => {
       if(priority)speechGaze=true;
       const c = $('orb').getBoundingClientRect(), r = el.getBoundingClientRect();
       const x = Math.max(-1, Math.min(1, ((r.left + r.width / 2) - (c.left + c.width / 2)) / (innerWidth / 2)));
-      const y = Math.max(-1, Math.min(1, ((r.top + r.height / 2) - (c.top + c.height / 2)) / (innerHeight / 2)));
+      // Seen whole, her eyes are near the top of the canvas, not in its middle.
+      const eyes = document.body.classList.contains('full-body') ? 0.12 : 0.5;
+      const y = Math.max(-1, Math.min(1, ((r.top + r.height / 2) - (c.top + c.height * eyes)) / (innerHeight / 2)));
       rig?.setState({ x, y });
       clearTimeout(gazeTimer); gazeTimer = setTimeout(() => {speechGaze=false;rig?.setState({x:0,y:0});}, ms);
     },
@@ -48,6 +52,7 @@ const aura = (() => {
 })();
 
 function particleOrb() {
+  document.body.classList.remove('full-body');
   // A fresh canvas: one that already handed out a WebGL context cannot give a 2D one.
   const used = $('orb'), canvas = used.cloneNode(); used.replaceWith(canvas);
   const ctx = canvas.getContext('2d');

@@ -3,15 +3,32 @@ import {Reflector} from 'three/addons/objects/Reflector.js';
 export function reflectionAllowed(wide,quality,mobile,capable){
   return !mobile&&capable&&Number.isFinite(wide)&&wide>.60&&quality>.5;
 }
+// A quality tier that flickers must not switch the reflection on and off: it stays on through a dip shorter than
+// `hold` seconds, and goes off at once when she leaves the wide view or on a phone. It also waits `warmup` seconds
+// after the first frame, so building the reflector and its shader does not delay her first appearance.
+export function createReflectionGate({hold=3,warmup=1.5}={}){
+  let on=false,low=0,age=0;
+  return {update({wide,quality,mobile,capable},dt){
+    age+=Number.isFinite(dt)?Math.max(0,dt):0;
+    if(age<warmup)return false;
+    if(!reflectionAllowed(wide,1,mobile,capable)){on=false;low=0;return on;}
+    if(quality>.5){on=true;low=0;return on;}
+    low+=Number.isFinite(dt)?Math.max(0,dt):0;
+    if(low>hold)on=false;
+    return on;
+  }};
+}
 const SHADER={
   name:'AuraStudioFloor',
   uniforms:{color:{value:null},tDiffuse:{value:null},textureMatrix:{value:null},uOpacity:{value:1}},
-  vertexShader:Reflector.ReflectorShader.vertexShader,
+  // The floor fades out toward its edge; a hard-edged dark square showed behind her (2026-11-28).
+  vertexShader:Reflector.ReflectorShader.vertexShader.replace('void main() {','varying vec2 vAuraLocal;\nvoid main() {\n\tvAuraLocal = position.xy;'),
   fragmentShader:`
     uniform vec3 color;
     uniform sampler2D tDiffuse;
     uniform float uOpacity;
     varying vec4 vUv;
+    varying vec2 vAuraLocal;
     #include <logdepthbuf_pars_fragment>
     void main(){
       #include <logdepthbuf_fragment>
@@ -19,7 +36,8 @@ const SHADER={
       vec2 d=vec2(0.005,0.005);
       vec3 r=texture2D(tDiffuse,uv).rgb*.40;
       r+=(texture2D(tDiffuse,uv+vec2(d.x,0.0)).rgb+texture2D(tDiffuse,uv-vec2(d.x,0.0)).rgb+texture2D(tDiffuse,uv+vec2(0.0,d.y)).rgb+texture2D(tDiffuse,uv-vec2(0.0,d.y)).rgb)*.15;
-      gl_FragColor=vec4(color+r*.23,uOpacity);
+      float edge=1.0-smoothstep(.35,1.0,length(vAuraLocal)/2.0);
+      gl_FragColor=vec4(color+r*.23,uOpacity*edge);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
     }`
@@ -27,9 +45,10 @@ const SHADER={
 export function createStudioReflection(scene,renderer,mobile){
   const capable=!mobile&&Boolean(renderer.extensions.has('EXT_color_buffer_float'));
   let floor=null;
+  const gate=createReflectionGate();
   return {
-    update(wide,quality){
-      const on=reflectionAllowed(wide,quality,mobile,capable);
+    update(wide,quality,dt=1/30){
+      const on=gate.update({wide,quality,mobile,capable},dt);
       if(on&&!floor){
         floor=new Reflector(new THREE.PlaneGeometry(4,4),{textureWidth:256,textureHeight:256,multisample:0,clipBias:.001,color:0x10141b,shader:SHADER});
         floor.rotation.x=-Math.PI/2;floor.position.y=.008;

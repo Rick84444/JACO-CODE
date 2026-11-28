@@ -1,6 +1,12 @@
 // Presentation-only motion. Distances are metres in V31's authored Y-up stage.
 export const BODY_ACTIONS=Object.freeze(['present-left','present-right','explain','advance','return']);
 export const WALK_DISTANCE=.48;
+// Where a hand rests when she stands still: hanging a little out from the thigh and slightly forward, within the
+// measured arm reach. The model's own rest pose holds the arms out like a mannequin (operator 2026-11-28).
+export function relaxedHandTarget(shoulder,aPoseHand,reach){
+  const out=Math.sign(aPoseHand.x-shoulder.x)||1;
+  return {x:shoulder.x+out*.10,y:shoulder.y-.92*reach,z:shoulder.z+.05};
+}
 const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v));
 const ease=t=>{t=clamp(t);return t*t*(3-2*t);};
 const mix=(a,b,t)=>a+(b-a)*t;

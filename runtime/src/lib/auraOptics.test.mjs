@@ -30,3 +30,12 @@ test('only exact authored skin, eye and oral materials are eligible for optical 
   for(const n of ['Aura platinum hair cards','Aura suit / brushed_titanium','Human.mindfront_eyelashes_02','unknown'])assert.equal(materialRole(n),'authored');
   assert.ok(STUDIO_LIGHT.environment<1&&STUDIO_LIGHT.lightProxy>=0&&STUDIO_LIGHT.lightProxy<=1);
 });
+
+// 2026-11-28: a steep, hard key left dark hollows under the brows, on the cheeks and under the chin.
+test('the face is lit softly from a moderate height with a low frontal fill',()=>{
+  const {key,fill,front,positions}=STUDIO_LIGHT;
+  assert.ok(key/(fill+front)<=1.4,'key to fill ratio');
+  const [x,y,z]=positions.key,elevation=Math.atan2(y-1.55,Math.hypot(x,z))*180/Math.PI;
+  assert.ok(elevation>10&&elevation<=32,'key elevation above the face: '+elevation.toFixed(1));
+  const [,fy,fz]=positions.front;assert.ok(fy<1.6&&fz>1,'frontal fill comes from about eye height, in front');
+});

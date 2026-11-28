@@ -33,7 +33,7 @@ export function createSecondaryRig(scene,model,bones,renderer,mobile){
     for(const o of hair)for(let i=0;i<3;i++)o.morphTargetInfluences[o.morphTargetDictionary[HAIR[i]]]=[p.front,p.back,p.side][i];
     for(const {m,roughness} of bases)m.roughness=Math.min(1,Math.max(0,roughness-p.fabric*.055));
     const wide=reduced?0:Math.min(1,Math.max(0,input.wide||0));
-    const reflected=reflection.update(wide,input.quality||0);
+    const reflected=reflection.update(wide,input.quality||0,dt);
     floor.visible=wide>.01&&!reflected;floor.material.opacity=wide*.86;
     model.updateMatrixWorld(true);
     shadows.forEach(({entry,mesh,mat},i)=>{

@@ -67,9 +67,11 @@ export function createV31OpticalRig(scene,model,renderer){
   };
   const ambient=new THREE.HemisphereLight(0xe4eeff,0x37303a,STUDIO_LIGHT.ambient);
   lights.push(ambient);scene.add(ambient);
-  direct(0xfff1e6,STUDIO_LIGHT.key,-.65,2.15,1.7);
-  direct(0xd0e3ff,STUDIO_LIGHT.fill,1.2,1.55,1.1);
-  direct(0xb9d6ff,STUDIO_LIGHT.rim,-.65,2.1,-.8);
+  const at=STUDIO_LIGHT.positions;
+  direct(0xfff1e6,STUDIO_LIGHT.key,...at.key);
+  direct(0xd0e3ff,STUDIO_LIGHT.fill,...at.fill);
+  direct(0xfff6ee,STUDIO_LIGHT.front,...at.front);
+  direct(0xb9d6ff,STUDIO_LIGHT.rim,...at.rim);
   try{environment=makeStudioEnvironment(renderer);scene.environment=environment.texture;scene.environmentIntensity=STUDIO_LIGHT.environment;}
   catch(error){console.warn('Aura optical environment unavailable',error);}
   renderer.outputColorSpace=THREE.SRGBColorSpace;

@@ -36,3 +36,15 @@ test('weight moves to support side before swing and is bounded',()=>{
   assert.equal(sampleWalk(3).weightX,0);
   for(let t=0;t<3;t+=.01)assert.ok(Math.abs(sampleWalk(t).weightX)<=.035001);
 });
+
+// Operator 2026-11-28: "why does she stand like a doll?" The model's rest pose holds the arms out (A-pose).
+test('at rest the hands hang beside the thighs, within reach and outside the body',async()=>{
+  const {relaxedHandTarget}=await import('./auraBodyMotion.mjs');
+  const shoulder={x:.17,y:1.42,z:0},aPoseHand={x:.62,y:1.05,z:.02},reach=.56;
+  const h=relaxedHandTarget(shoulder,aPoseHand,reach);
+  assert.ok(h.x>shoulder.x&&h.x-shoulder.x<.2,'beside the body on the same side: '+h.x);
+  assert.ok(shoulder.y-h.y>.85*reach&&Math.hypot(h.x-shoulder.x,h.y-shoulder.y,h.z-shoulder.z)<reach,'hanging, within reach');
+  assert.ok(h.z>shoulder.z,'a little in front of the hip, not behind it');
+  const mirrored=relaxedHandTarget({x:-.17,y:1.42,z:0},{x:-.62,y:1.05,z:.02},reach);
+  assert.ok(Math.abs(mirrored.x+h.x)<1e-9&&mirrored.y===h.y);
+});

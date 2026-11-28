@@ -1032,7 +1032,7 @@ function disposeModel(model){
  * @param {HTMLCanvasElement} canvas
  * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, stars?: boolean}} [options]
  */
-export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,stars=true}={}){
+export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,stars=true,fullFigure=false}={}){
   const {gltf,anatomical}=await loadAvatar(signal);
   const model=gltf.scene;
   let renderer,geometry,material,observer,domTelemetryObserver,lightBody,voiceTracker,qualityGovernor,behaviorEngine,secondaryRig,raf=0,disposed=false;
@@ -1370,15 +1370,17 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
 
       const bodyPose=bodyRig?.update(dt,still,humanPose);
       if(bodyPose){
-        const wide=bodyPose.wide,offset=bodyPose.rootZ;
-        camera.position.set(camX*(1-wide),1.570+camY+(0.89-1.570-camY)*wide,1.05+(4.0/Math.min(1,camera.aspect)-1.05)*wide);
+        // On the Operator Stage she is always seen whole (fullFigure); the portrait widens only while she moves.
+        const wide=fullFigure?1:bodyPose.wide,offset=bodyPose.rootZ;
+        const far=fullFigure?Math.max(3.55,1.05/(2*Math.tan(camera.fov*Math.PI/360)*camera.aspect)):4.0/Math.min(1,camera.aspect);
+        camera.position.set(camX*(1-wide),1.570+camY+(0.89-1.570-camY)*wide,1.05+(far-1.05)*wide);
         camera.lookAt(0,1.540+(.87-1.540)*wide,.03+.18*wide);
         canvas.dataset.bodyAction=bodyPose.action||'idle';
         canvas.dataset.bodyTravel=offset.toFixed(3);
         canvas.dataset.bodyFrame=wide.toFixed(3);
       }
       if(secondaryRig){
-        const secondary=secondaryRig.update({yaw,pitch,z:bodyPose?.rootZ||0,flex:Math.max(bodyPose?.gesture||0,Math.abs(bodyPose?.swing||0)*3),wide:bodyPose?.wide||0,quality:qualityTier,leftLift:bodyPose?.leftLift||0,rightLift:bodyPose?.rightLift||0},rawDt/1000,still);
+        const secondary=secondaryRig.update({yaw,pitch,z:bodyPose?.rootZ||0,flex:Math.max(bodyPose?.gesture||0,Math.abs(bodyPose?.swing||0)*3),wide:fullFigure?1:bodyPose?.wide||0,quality:qualityTier,leftLift:bodyPose?.leftLift||0,rightLift:bodyPose?.rightLift||0},rawDt/1000,still);
         canvas.dataset.hairSway=[secondary.front,secondary.back,secondary.side].map(x=>x.toFixed(3)).join(',');
         canvas.dataset.hairMorphMeshes=String(secondary.hairMeshes);
         canvas.dataset.textileResponseMaterials=String(secondary.textileMaterials);

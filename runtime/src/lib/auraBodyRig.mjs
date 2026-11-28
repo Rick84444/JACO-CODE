@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {createBodyMotion} from './auraBodyMotion.mjs';
+import {createBodyMotion,relaxedHandTarget} from './auraBodyMotion.mjs';
 const NAMES=['Hips','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand','LeftUpLeg','LeftLeg','LeftFoot','RightUpLeg','RightLeg','RightFoot'];
 // Solve the measured two-bone chains in world space; preserve authored bone axes.
 export function createAuraBodyRig(model,bones){
@@ -13,6 +13,7 @@ export function createAuraBodyRig(model,bones){
     for(const [kind,names] of [['arm',[side+'Arm',side+'ForeArm',side+'Hand']],['leg',[side+'UpLeg',side+'Leg',side+'Foot']]]){
       const [a,b,c]=names.map(bone),p=get(names[0]),q=get(names[1]),r=get(names[2]);
       chains[side+kind]={a,b,c,l1:p.distanceTo(q),l2:q.distanceTo(r),rest:r,rotation:c.getWorldQuaternion(new THREE.Quaternion())};
+      if(kind==='arm'){const h=relaxedHandTarget(p,r,p.distanceTo(q)+q.distanceTo(r));chains[side+kind].relaxed=new THREE.Vector3(h.x,h.y,h.z);}
     }
   }
   const fingers=[];
@@ -31,7 +32,7 @@ export function createAuraBodyRig(model,bones){
   }
   const fingerDelta=new THREE.Quaternion();
   const motion=createBodyMotion();
-  const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),direction=new THREE.Vector3(),pole=new THREE.Vector3(),mid=new THREE.Vector3(),target=new THREE.Vector3(),end=new THREE.Vector3(),delta=new THREE.Quaternion(),world=new THREE.Quaternion(),parent=new THREE.Quaternion();
+  const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),direction=new THREE.Vector3(),pole=new THREE.Vector3(),mid=new THREE.Vector3(),target=new THREE.Vector3(),gestureTarget=new THREE.Vector3(),end=new THREE.Vector3(),delta=new THREE.Quaternion(),world=new THREE.Quaternion(),parent=new THREE.Quaternion();
   function orient(joint,child,destination){
     joint.getWorldPosition(a);child.getWorldPosition(b);
     b.sub(a).normalize();c.copy(destination).sub(a).normalize();
@@ -64,7 +65,8 @@ export function createAuraBodyRig(model,bones){
       const p=motion.update(dt,reduced);
       const idleWeight=reduced?0:behavior?.weight||0;
       const beat=reduced||p.action?0:behavior?.handBeat||0;
-      const active=Boolean(p.action||p.wide>0||p.rootZ||Math.abs(idleWeight)>.001||beat>.001);
+      // The arms rest at her sides, so the arms are solved every frame (two short chains).
+      const active=true;
       // Small variations around the authored finger pose; inferred bend axis comes from existing curvature.
       for(const f of fingers){
         const sign=f.side==='Left'?1:-1;
@@ -87,10 +89,11 @@ export function createAuraBodyRig(model,bones){
         target.copy(leg.rest);target.z+=left?p.leftZ:p.rightZ;target.y+=left?p.leftLift:p.rightLift;
         solve(leg,target,0,0,1,true);
         const strength=p.gesture*(p.side===0?.60:p.side===sign?1:0)+(left?beat*.20:beat*.35);
-        target.copy(arm.rest);target.z+=p.rootZ+sign*p.swing;
-        // An open-hand presentation remains within the measured arm reach.
-        target.x+=sign*.10*strength;target.y+=.20*strength;target.z+=.13*strength;
-        if(strength>0||p.swing)solve(arm,target,sign*.55,-1,.15);
+        // An open-hand presentation remains within the measured arm reach; at rest the hand hangs beside the thigh.
+        const lift=Math.min(1,strength);
+        gestureTarget.copy(arm.rest);gestureTarget.x+=sign*.10*strength;gestureTarget.y+=.20*strength;gestureTarget.z+=.13*strength;
+        target.copy(arm.relaxed).lerp(gestureTarget,lift);target.z+=p.rootZ+sign*p.swing;
+        solve(arm,target,sign*(.25+.30*lift),-lift,-1+1.15*lift);
       }
       model.updateMatrixWorld(true);
       return p;

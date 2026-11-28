@@ -143,3 +143,22 @@ test('planar reflection dependency ships with stage and resolves bare three impo
   assert.ok(assets.resolve('/vendor/three/addons/objects/Reflector.js'));
   assert.match(assets.read(assets.resolve('/vendor/auraStudioFloor.mjs')).toString(),/\/vendor\/three\/addons\/objects\/Reflector\.js/);
 });
+
+// Operator 2026-11-28: see all of her. With V31 the stage frames the whole figure and gives her the room.
+test('the stage shows the whole V31 figure and keeps the portrait layout for the fallback', () => {
+  const stage = fs.readFileSync(path.join(runtimeRoot, 'operator-stage', 'stage.js'), 'utf8');
+  assert.match(stage, /fullFigure: true/);
+  assert.match(stage, /dataset\.avatarVersion === 'V31'[^\n]*classList\.add\('full-body'\)/);
+  const css = fs.readFileSync(path.join(runtimeRoot, 'operator-stage', 'stage.css'), 'utf8');
+  assert.match(css, /body\.full-body \.aura canvas \{[^}]*mask-image: none;[^}]*mix-blend-mode: normal;/);
+  const rig = fs.readFileSync(path.join(runtimeRoot, 'src/lib/auraRigLightform.mjs'), 'utf8');
+  assert.match(rig, /fullFigure=false/);
+});
+
+test('the reflecting floor fades out toward its edge', async () => {
+  const floor = fs.readFileSync(path.join(runtimeRoot, 'src/lib/auraStudioFloor.mjs'), 'utf8');
+  assert.match(floor, /vAuraLocal = position\.xy/);
+  assert.match(floor, /uOpacity\*edge/);
+  const reflector = fs.readFileSync(path.join(runtimeRoot, 'node_modules/three/examples/jsm/objects/Reflector.js'), 'utf8');
+  assert.ok(reflector.includes('void main() {'), 'the pinned Reflector shader still has the anchor the fade is inserted at');
+});
