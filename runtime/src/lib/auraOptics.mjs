@@ -22,6 +22,8 @@ export function remapEyeRadius(radius,scale){
 export function materialRole(name){
   if(name==='Human.body')return 'skin';
   if(name==='Human.high-poly')return 'eyes';
+  if(name==='Human.teeth_base')return 'teeth';
+  if(name==='Human.tongue01')return 'tongue';
   return 'authored';
 }
 export const STUDIO_LIGHT=Object.freeze({key:2.35,fill:.75,rim:1.25,ambient:.65,environment:.72,exposure:1.0,lightProxy:.48});

@@ -44,3 +44,22 @@ export function shaderPatch(fragment,include,replacement){
   const anchor='#include <'+include+'>';
   return typeof replacement==='string'&&fragment.split(anchor).length===2?fragment.replace(anchor,replacement):null;
 }
+
+// The rotated lip island in the original 2048px skin atlas. Keep the mask local.
+export const LIP_UV=Object.freeze({x:.909,y:.515,rx:.014,ry:.023});
+export function lipWetness(u,v){
+  if(![u,v].every(Number.isFinite))return 0;
+  const r=Math.hypot((u-LIP_UV.x)/LIP_UV.rx,(v-LIP_UV.y)/LIP_UV.ry);
+  const t=clamp((r-.45)/.55,0,1);
+  return 1-t*t*(3-2*t);
+}
+export function patchLipCoat(source){
+  const anchor='material.clearcoatRoughness = clearcoatRoughness;';
+  if(typeof source!=='string'||source.split(anchor).length!==2)return null;
+  return source.replace(anchor,anchor+`
+  #ifdef USE_MAP
+    float auraLipMask=1.0-smoothstep(0.45,1.0,length((vMapUv-vec2(${LIP_UV.x},${LIP_UV.y}))/vec2(${LIP_UV.rx},${LIP_UV.ry})));
+    material.clearcoat=mix(material.clearcoat,0.27,auraLipMask);
+    material.clearcoatRoughness=mix(material.clearcoatRoughness,0.31,auraLipMask);
+  #endif`);
+}

@@ -24,8 +24,9 @@ test('pupil constriction is faster than dilation, both bounded and time-based',(
   assert.ok(Math.abs(a-b)<1e-9);
   assert.ok(a>=.76&&a<=1.28);
 });
-test('only exact authored skin and eye materials are eligible for optical refinement',()=>{
+test('only exact authored skin, eye and oral materials are eligible for optical refinement',()=>{
   assert.equal(materialRole('Human.body'),'skin');assert.equal(materialRole('Human.high-poly'),'eyes');
-  for(const n of ['Human.teeth_base','Aura platinum hair cards','Aura suit / brushed_titanium','Human.mindfront_eyelashes_02','unknown'])assert.equal(materialRole(n),'authored');
+  assert.equal(materialRole('Human.teeth_base'),'teeth');assert.equal(materialRole('Human.tongue01'),'tongue');
+  for(const n of ['Aura platinum hair cards','Aura suit / brushed_titanium','Human.mindfront_eyelashes_02','unknown'])assert.equal(materialRole(n),'authored');
   assert.ok(STUDIO_LIGHT.environment<1&&STUDIO_LIGHT.lightProxy>=0&&STUDIO_LIGHT.lightProxy<=1);
 });

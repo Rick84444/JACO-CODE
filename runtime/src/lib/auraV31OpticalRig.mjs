@@ -1,4 +1,4 @@
-import {HAIR_CUTOFF,isPhotoHair,patchSkinLighting,patchHairMap,shaderPatch} from './auraSurfaceDetail.mjs';
+import {HAIR_CUTOFF,isPhotoHair,patchSkinLighting,patchHairMap,shaderPatch,patchLipCoat} from './auraSurfaceDetail.mjs';
 import * as THREE from 'three';
 import {EYE_ATLAS,STUDIO_LIGHT,approachPupil,pupilScaleForLight,materialRole} from './auraOptics.mjs';
 
@@ -87,12 +87,17 @@ export function createV31OpticalRig(scene,model,renderer){
       if(source.normalMap)m.clearcoatNormalMap=source.normalMap;
       m.clearcoatNormalScale.copy(source.normalScale).multiplyScalar(.45);
       const chunk=patchSkinLighting(THREE.ShaderChunk.lights_physical_pars_fragment);
-      if(chunk){m.onBeforeCompile=shader=>{const patched=shaderPatch(shader.fragmentShader,'lights_physical_pars_fragment',chunk);if(patched){shader.fragmentShader=patched;skinDetailReady=true;}};m.customProgramCacheKey=()=> 'aura-v31-skin-wrap-v1';}
+      const lip=patchLipCoat(THREE.ShaderChunk.lights_physical_fragment);
+      if(chunk){m.onBeforeCompile=shader=>{const patched=shaderPatch(shader.fragmentShader,'lights_physical_pars_fragment',chunk);if(patched){shader.fragmentShader=patched;skinDetailReady=true;}const wet=shaderPatch(shader.fragmentShader,'lights_physical_fragment',lip);if(wet)shader.fragmentShader=wet;};m.customProgramCacheKey=()=> 'aura-v31-skin-wrap-lips-v2';}
     }else if(photoHair){
       m.alphaTest=HAIR_CUTOFF;m.alphaToCoverage=antialias;m.transparent=false;m.depthWrite=true;
       m.roughness=Math.min(m.roughness,.85);m.specularIntensity=.56;
       const chunk=patchHairMap(THREE.ShaderChunk.map_fragment);
       if(chunk&&m.map){m.onBeforeCompile=shader=>{const patched=shaderPatch(shader.fragmentShader,'map_fragment',chunk);if(patched){shader.fragmentShader=patched;hairDetailReady=true;}};m.customProgramCacheKey=()=> 'aura-v31-hair-fibers-v1';}
+    }else if(role==='teeth'){
+      m.ior=1.53;m.specularIntensity=.65;m.roughness=.32;m.clearcoat=.12;m.clearcoatRoughness=.24;
+    }else if(role==='tongue'){
+      m.ior=1.36;m.specularIntensity=.62;m.roughness=.48;m.clearcoat=.24;m.clearcoatRoughness=.32;
     }else{
       m.ior=1.376;m.specularIntensity=.9;m.clearcoat=.62;m.clearcoatRoughness=.12;
       if(source.map&&!source.map.flipY)pupilReady=installPupil(m,uniform);
