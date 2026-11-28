@@ -71,3 +71,15 @@ extensions/jaco-vscode/package-lock.json
 
 # Personal editor settings stay local.
 .vscode/settings.json
+
+# Operator-provisioned experimental photoreal face and generated local bundle
+/runtime/public/aura-splat/
+/runtime/.aura-splat-stage-*/
+/runtime/local/
+
+# Operator-provisioned experimental anatomical model
+/runtime/public/branding/aura-anatomical.glb
+/runtime/public/branding/aura-anatomical.glb.tmp-*
+
+# Operator-provisioned rights-cleared HeadAudio model
+/runtime/public/branding/aura-headaudio-model.bin

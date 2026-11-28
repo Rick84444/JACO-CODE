@@ -1,0 +1,15 @@
+# Offline photo-rig LOD refinement V2 — 2026-11-26
+Executed locally against the previous experimental rig SHA-256 68526717e0af1ded70c53ee2ba1ea922a391baeee9ebb3413f5510f6a49cb65d. This is a geometry/weight optimization, not a reconstruction of improved anatomy. Existing runtime and shipping assets unchanged. No paid compute.
+
+Tested VTK DecimatePro preserving topology, then VTK quadric simplification using the source vertex colors as an attribute error metric. Rejected scalar weight 1.0 because the resulting mesh was not watertight. Selected weight 0.2 with volume preservation, after independently inspecting the rendered comparison. Transferred four-joint weights from nearest source vertices, smoothed on the reduced mesh, locked feet/head regions during smoothing, and selected 12 smoothing passes by 95th-percentile absolute arm-region edge length strain across eight sampled poses, subject to hand and foot displacement constraints. GLB buffer views repacked; original skeleton and animation data preserved. Verified readback, rest-pose deformation and normalized weights. This is not a general validation of every possible motion.
+
+- Original: 65,274 vertices, 130,544 triangles, 4,991,864 bytes.
+- Selected V2: 22,847 vertices, 45,690 triangles, 1,767,556 bytes, one watertight mesh with consistent winding. 19 joints, 3 original clips, no facial morphs or separate hair. SHA-256 ecc4c11855aad9ea60a851575b750b9e295ad481ece932a7ff0a9630ea16a134.
+- Sampled original vertices to reduced surface: 95th percentile deviation 0.681 mm, max 2.756 mm in sample of 5,000 original vertices. Not a full Hausdorff bound.
+- Normalized skin-weight sum max error 1.1920928955078125e-7.
+- On identical reduced topology, sampled arm edge strain p95 before smoothing 2.256%, after 2.134%; p99 7.159% to 6.901%. Original topology is not directly comparable because edge distributions differ.
+- Peak median selected hand displacement 230.58 mm; sampled foot max displacement 7.34e-9 m. Not a locomotion or foot IK test.
+- CPU raster comparisons at front rest, 35 degrees mid-Explain, 90 degrees mid-Listen: silhouette intersection-over-union 0.995184, 0.996909, 0.998223. Mean absolute RGB-channel difference over common foreground: 1.235, 1.246, 1.231 on 0–255 scale. The topology-only candidate produced about 5.7–5.9 RGB-channel error and visibly blurred the face/costume. Color-aware result preferred. This metric assesses agreement with the previous flawed mesh, not likeness to the original photo.
+- Actual GLB animation decoded to 24 frames for the local GIF. No real-time GPU or device test, no CI for the local binary, no claim of reduced runtime latency.
+
+The side view remains visibly flattened and streaked, hair is fused with shoulders, face lacks real facial topology. Further polygon reduction is not the priority. Obtain side reference and coherent anatomy/UV geometry; separate hair; build face morphs and timed visemes before runtime integration. The local binary, source and rendered comparison are delivered to operator separately, not committed. Do not merge as production avatar.

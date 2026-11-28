@@ -203,6 +203,7 @@ import {
 } from "./src/server/forge/jacoForge.js";
 import { createA2ARouter } from './src/server/a2a/router.js';
 import { createAuraSourceInspector } from './src/server/connected/auraSourceInspector.mjs';
+import { mountAuraSplatAssets } from './src/server/auraLocalAssets.mjs';
 
 // Sign-in state of the vendor CLIs, observed by spawning them; cached so Aura's snapshot does not spawn on every read.
 let brainCache: { at: number; list: any[] } | null = null;
@@ -7966,6 +7967,11 @@ const notifyPhone = async (action) => {
   // The IDE, unchanged, one address further in.
   // (Rewritten to the page itself: a rewrite to the folder made the static server redirect /ide to /ide/.)
   app.get(['/ide', '/ide/'], (req, _res, next) => { req.url = '/index.html'; next(); });
+
+  // The optional photoreal head is a person's likeness: served to the local operator only, from outside public/,
+  // and mounted before the open static handler below and the SPA fallback.
+  const splatAssets = mountAuraSplatAssets(app, { root: RELEASE_ROOT, guard: requireLocalUi, serveStatic: express.static });
+  if (splatAssets.legacyPublicCopy) console.warn('[Aura] public/aura-splat is a leftover from an earlier layout: it is no longer served at /aura-splat, but a client build still copies it. Remove it and reinstall with runtime/scripts/install-aura-splat.mjs.');
 
   // Serve static files from public/ directory
   app.use(express.static(path.join(WORKSPACE_ROOT, "public")));
