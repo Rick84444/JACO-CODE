@@ -1,3 +1,4 @@
+import {HAIR_CUTOFF,isPhotoHair,patchSkinLighting,patchHairMap,shaderPatch} from './auraSurfaceDetail.mjs';
 import * as THREE from 'three';
 import {EYE_ATLAS,STUDIO_LIGHT,approachPupil,pupilScaleForLight,materialRole} from './auraOptics.mjs';
 
@@ -58,6 +59,8 @@ vec2 auraEyeUv(vec2 uv) {
 export function createV31OpticalRig(scene,model,renderer){
   const owned=new Set(),replaced=new Map(),uniform={value:1};
   let pupilReady=false,environment=null;
+  let skinDetailReady=false,hairDetailReady=false;
+  const antialias=renderer.getContext().getContextAttributes()?.antialias===true;
   const lights=[];
   const direct=(color,intensity,x,y,z)=>{
     const light=new THREE.DirectionalLight(color,intensity);light.position.set(x,y,z);lights.push(light);scene.add(light);return light;
@@ -74,7 +77,8 @@ export function createV31OpticalRig(scene,model,renderer){
   renderer.toneMappingExposure=STUDIO_LIGHT.exposure;
   const convert=source=>{
     const role=materialRole(source?.name);
-    if(role==='authored'||!source.isMeshStandardMaterial)return source;
+    const photoHair=isPhotoHair(source?.name);
+    if((role==='authored'&&!photoHair)||!source?.isMeshStandardMaterial)return source;
     if(replaced.has(source))return replaced.get(source);
     const m=physicalFrom(source);
     // Restrained surface response: not subsurface scattering or an anatomy edit.
@@ -82,6 +86,13 @@ export function createV31OpticalRig(scene,model,renderer){
       m.ior=1.42;m.specularIntensity=.67;m.clearcoat=.08;m.clearcoatRoughness=.58;
       if(source.normalMap)m.clearcoatNormalMap=source.normalMap;
       m.clearcoatNormalScale.copy(source.normalScale).multiplyScalar(.45);
+      const chunk=patchSkinLighting(THREE.ShaderChunk.lights_physical_pars_fragment);
+      if(chunk){m.onBeforeCompile=shader=>{const patched=shaderPatch(shader.fragmentShader,'lights_physical_pars_fragment',chunk);if(patched){shader.fragmentShader=patched;skinDetailReady=true;}};m.customProgramCacheKey=()=> 'aura-v31-skin-wrap-v1';}
+    }else if(photoHair){
+      m.alphaTest=HAIR_CUTOFF;m.alphaToCoverage=antialias;m.transparent=false;m.depthWrite=true;
+      m.roughness=Math.min(m.roughness,.85);m.specularIntensity=.56;
+      const chunk=patchHairMap(THREE.ShaderChunk.map_fragment);
+      if(chunk&&m.map){m.onBeforeCompile=shader=>{const patched=shaderPatch(shader.fragmentShader,'map_fragment',chunk);if(patched){shader.fragmentShader=patched;hairDetailReady=true;}};m.customProgramCacheKey=()=> 'aura-v31-hair-fibers-v1';}
     }else{
       m.ior=1.376;m.specularIntensity=.9;m.clearcoat=.62;m.clearcoatRoughness=.12;
       if(source.map&&!source.map.flipY)pupilReady=installPupil(m,uniform);
@@ -94,7 +105,7 @@ export function createV31OpticalRig(scene,model,renderer){
   return {
     update(dt,reduced){
       uniform.value=reduced?1:approachPupil(uniform.value,pupilScaleForLight(STUDIO_LIGHT.lightProxy),dt);
-      return {pupilScale:uniform.value,pupilReady,environmentReady:Boolean(environment),surfaceCount:owned.size};
+      return {pupilScale:uniform.value,pupilReady,environmentReady:Boolean(environment),surfaceCount:owned.size,skinDetailReady,hairDetailReady};
     },
     dispose(){
       scene.remove(...lights);

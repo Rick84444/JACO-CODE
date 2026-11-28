@@ -15,6 +15,7 @@ on:
       - 'runtime/src/lib/auraHumanBehavior*.mjs'
       - 'runtime/src/lib/auraOptics*.mjs'
       - 'runtime/src/lib/auraV31OpticalRig.mjs'
+      - 'runtime/src/lib/auraSurfaceDetail*.mjs'
       - 'runtime/src/lib/auraSecondary*.mjs'
       - 'runtime/src/lib/workspaceActions*.mjs'
       - 'runtime/operator-stage/**'
@@ -58,7 +59,7 @@ jobs:
           node --check runtime/src/lib/auraBodyRig.mjs
           node --check runtime/src/lib/auraV31OpticalRig.mjs
           node --check runtime/src/lib/auraSecondaryRig.mjs
-          node --test runtime/src/lib/auraSpeechTimeline.test.mjs runtime/src/lib/auraBodyMotion.test.mjs runtime/src/lib/auraHumanBehavior.test.mjs runtime/src/lib/auraOptics.test.mjs runtime/src/lib/auraSecondaryMotion.test.mjs runtime/src/lib/workspaceActions.test.mjs tests/nova/operator-stage-assets.test.mjs
+          node --test runtime/src/lib/auraSpeechTimeline.test.mjs runtime/src/lib/auraBodyMotion.test.mjs runtime/src/lib/auraHumanBehavior.test.mjs runtime/src/lib/auraOptics.test.mjs runtime/src/lib/auraSurfaceDetail.test.mjs runtime/src/lib/auraSecondaryMotion.test.mjs runtime/src/lib/workspaceActions.test.mjs tests/nova/operator-stage-assets.test.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: aura-verified-rig
