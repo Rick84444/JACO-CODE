@@ -1,3 +1,4 @@
+import {isOAuthReference,oauthDefinitionMatches,readonlyOAuthCredentials} from './oauthReadonlyCredentials.mjs';
 // Streamable HTTP transport used by the canonical MCP host.
 // Only emit finite error codes; low-level fetch errors can contain private
 // network details and must not leak into the agent log or public UI.
@@ -25,8 +26,8 @@ export function rpcError(error) {
   return Object.assign(new Error(`MCP_RPC_ERROR:${code}${reason ? '_' + reason : ''}`), definite ? { preDispatch: true } : {});
 }
 export class HttpMcpClient {
-  constructor(id, def, { fetchImpl = fetch, env = process.env } = {}) {
-    Object.assign(this, { id, def, fetchImpl, env });
+  constructor(id, def, { fetchImpl = fetch, env = process.env, oauthCredentials = readonlyOAuthCredentials } = {}) {
+    Object.assign(this, { id, def, fetchImpl, env, oauthCredentials });
     this.protocol = '2025-06-18'; this.nextId = 1; this.tools = []; this.ready = null; this.initialized = false;
     this.session = null; this.error = null; this.startedAt = null; this.generation = 0;
   }
@@ -39,7 +40,19 @@ export class HttpMcpClient {
     const id = notification ? undefined : this.nextId++;
     const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': this.protocol };
     if (this.session) headers['Mcp-Session-Id'] = this.session;
-    if (this.def.tokenEnv) {
+    const oauth=isOAuthReference(this.def.tokenEnv);
+    let oauthToken;
+    if(oauth){
+      if(!oauthDefinitionMatches(this.id,this.def))throw Object.assign(Error('MCP_OAUTH_CREDENTIAL_SCOPE_INVALID'),{preDispatch:true});
+      if(!['initialize','notifications/initialized','tools/list'].includes(method)&&!(method==='tools/call'&&this.initialized&&this.tools.some(t=>t.name===params?.name&&t.readOnly===true)))throw Object.assign(Error('MCP_OAUTH_READ_ONLY'),{preDispatch:true});
+      try{oauthToken=await this.oauthCredentials.access(this.id,this.def);this.assertCurrent(generation);}
+      catch(error){
+        if(generation!==this.generation)throw Object.assign(Error('MCP_REQUEST_SUPERSEDED'),{preDispatch:true});
+        this.error=classifyMcpNetworkError(error);this.stop();
+        throw Object.assign(Error(this.error),{preDispatch:true});
+      }
+      headers.authorization=`Bearer ${oauthToken}`;
+    }else if (this.def.tokenEnv) {
       const token = this.env[this.def.tokenEnv];
       if (!token) throw Error('MCP_CREDENTIAL_REQUIRED');
       headers.authorization = `Bearer ${token}`;
@@ -56,7 +69,14 @@ export class HttpMcpClient {
     // session header nor stop the replacement on a stale 404.
     if (generation !== this.generation) { void response.body?.cancel().catch(() => {}); throw Error('MCP_REQUEST_SUPERSEDED'); }
     if (response.status === 404 && this.session) { this.error = 'MCP_SESSION_EXPIRED'; this.stop(); throw Error('MCP_SESSION_EXPIRED'); }
-    if (!response.ok) throw Error(response.status === 401 || response.status === 403 ? 'MCP_AUTH_REQUIRED' : `MCP_HTTP_${response.status}`);
+    if (!response.ok) {
+      void response.body?.cancel().catch(()=>{});
+      if(response.status===401||response.status===403){
+        if(oauth&&response.status===401)this.oauthCredentials.invalidate(oauthToken);
+        this.error='MCP_AUTH_REQUIRED';this.stop();throw Error(this.error);
+      }
+      throw Error(`MCP_HTTP_${response.status}`);
+    }
     const session = response.headers.get('mcp-session-id');
     if (session) this.session = session;
     if (notification) { await response.body?.cancel(); return; }
@@ -90,7 +110,7 @@ export class HttpMcpClient {
   }
   result(message) {
     // Remote error text can contain credentials or request details; expose a bounded code only.
-    if (message.error) throw rpcError(message.error);
+    if (message.error) throw rpcError(isOAuthReference(this.def.tokenEnv)?{code:message.error.code}:message.error);
     return message.result;
   }
   start() {
@@ -116,6 +136,7 @@ export class HttpMcpClient {
       } while (cursor);
       this.assertCurrent(generation);
       this.tools = tools.map(t => ({ name: String(t.name).slice(0,200), description: String(t.description || '').slice(0,3000), inputSchema: t.inputSchema || {type:'object'}, readOnly: t.annotations?.readOnlyHint === true }));
+      if(isOAuthReference(this.def.tokenEnv))this.tools=this.tools.filter(t=>t.readOnly===true);
       this.initialized = true; this.error = null; return this;
     })().catch(error => {
       const code = classifyMcpNetworkError(error);

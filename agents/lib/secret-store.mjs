@@ -97,6 +97,15 @@ export class SecretStore {
       return true;
     });
   }
+  // Compare under the same cross-process lock used by normal vault writes.
+  replaceIfCurrent(name, expected, value, meta = {}) {
+    const key = validateSecretName(name);
+    return this.#withWriteLock(() => {
+      if (this.get(key) !== expected) return false;
+      this.#setUnlocked(key, value, meta);
+      return true;
+    });
+  }
   #setUnlocked(name, value, meta) {
     const key = validateSecretName(name);
     const text = String(value ?? '');
@@ -159,7 +168,7 @@ export function generateSecretValue(length = 32) {
 
 // The value of a credential by name: the environment wins, then the store. For in-process use only.
 export function credential(name, { env = process.env, store = null } = {}) {
-  if (!name) return '';
+  if (!name || /^JACO_MCP_(?:GUIDED_|OAUTH_)/i.test(String(name).trim())) return '';
   if (env[name]) return String(env[name]);
   try { return (store || new SecretStore({ env })).get(name) || ''; } catch { return ''; }
 }
@@ -168,7 +177,7 @@ export function credential(name, { env = process.env, store = null } = {}) {
 // in each JACO process at startup, so every component that reads process.env[<NAME>] sees them without
 // being changed one by one. The environment still wins. Agent-made passwords (NOVA_*) are not exported:
 // they are only ever typed through vault:<key>.
-const EXPORTABLE = /^(?!NOVA_)(?:[A-Z][A-Z0-9_]*(_API_KEY|_TOKEN|_SECRET|_SECRET_KEY|_COMMERCE_KEY)|CDP_API_KEY_ID)$/;
+const EXPORTABLE = /^(?!NOVA_|JACO_MCP_(?:GUIDED_|OAUTH_))(?:[A-Z][A-Z0-9_]*(_API_KEY|_TOKEN|_SECRET|_SECRET_KEY|_COMMERCE_KEY)|CDP_API_KEY_ID)$/;
 export function hydrateEnvFromStore(env = process.env, store = null) {
   const loaded = [];
   try {

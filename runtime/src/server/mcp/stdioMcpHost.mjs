@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import { standingToolAuthority, mcpAuthorityRoot, operatorTaskEnabled } from '../../../../agents/lib/standing-tool-authority.mjs';
 import path from 'node:path';
 import { HttpMcpClient } from './httpMcpClient.mjs';
+import {isOAuthReference,oauthDefinitionMatches,readonlyOAuthCredentials} from './oauthReadonlyCredentials.mjs';
 import { MCP_INTEGRATION_CATALOG, catalogDefinitionMatches, pluginLoginPreset } from '../../lib/mcpIntegrationCatalog.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
@@ -191,6 +192,7 @@ export function loadServerConfig({ configFile, repoRoot, runtimeRoot }) {
       const url = new URL(s.url);
       if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
       if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
+      if(isOAuthReference(s.tokenEnv)&&(!oauthDefinitionMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv})||s.agentAccess==='write'))throw Error('MCP_OAUTH_CREDENTIAL_SCOPE_INVALID');
       servers[id] = withAccess({ name: String(s.name || id), role: String(s.role || ''), transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, allowOpenLogin: s.allowOpenLogin === true, icon: id === 'huggingface' ? 'huggingface' : undefined }, s);
       } catch { servers[id] = { name: String(s.name || id), role: '', transport: 'http', validationError: 'MCP_CONFIGURATION_INVALID' }; }
       continue;
@@ -235,6 +237,7 @@ export function validateServerEntry(id, s = {}) {
     const url = new URL(String(s.url || ''));
     if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw Error('MCP_HTTPS_URL_REQUIRED');
     if (s.tokenEnv && !/^[A-Z][A-Z0-9_]{0,79}$/.test(s.tokenEnv)) throw Error('MCP_TOKEN_ENV_INVALID');
+      if(isOAuthReference(s.tokenEnv)&&(!oauthDefinitionMatches(id,{transport:'http',url:url.toString(),tokenEnv:s.tokenEnv})||s.agentAccess==='write'))throw Error('MCP_OAUTH_CREDENTIAL_SCOPE_INVALID');
     return { ...common, transport: 'http', url: url.toString(), tokenEnv: s.tokenEnv || null, ...(s.allowOpenLogin === true ? {allowOpenLogin:true} : {}) };
   }
   const command = String(s.command || '').trim();
@@ -362,8 +365,8 @@ class StdioClient {
 const launchKey = def => JSON.stringify([def.transport, def.command, def.args, def.env, def.cwd, def.url, def.tokenEnv]);
 
 export class StdioMcpHost {
-  constructor({ configFile, repoRoot, runtimeRoot, log = () => {}, now = () => Date.now() }) {
-    Object.assign(this, { configFile, repoRoot, runtimeRoot, log, now });
+  constructor({ configFile, repoRoot, runtimeRoot, log = () => {}, now = () => Date.now(), oauthCredentials = readonlyOAuthCredentials }) {
+    Object.assign(this, { configFile, repoRoot, runtimeRoot, log, now, oauthCredentials });
     this.clients = new Map();
     // Feedback for the IDE: per-server counters and the latest calls, newest first.
     this.stats = new Map();
@@ -451,6 +454,7 @@ export class StdioMcpHost {
     const current=this.servers()[id];
     if (!current) throw Error(`MCP_SERVER_UNKNOWN:${id}`);
     if (agentAccess !== undefined && !AGENT_ACCESS.includes(agentAccess)) throw Error('MCP_AGENT_ACCESS_INVALID');
+    if(isOAuthReference(current.tokenEnv)&&agentAccess==='write')throw Error('MCP_OAUTH_READ_ONLY');
     if(allowOpenLogin!==undefined&&typeof allowOpenLogin!=='boolean')throw Error('MCP_LOGIN_OPT_IN_INVALID');
     if(allowOpenLogin===true&&!pluginLoginPreset(id,{...current,agentAccess:agentAccess??current.agentAccess}))throw Error('MCP_LOGIN_OPT_IN_NOT_SUPPORTED');
     const config = this.readConfig();
@@ -469,7 +473,7 @@ export class StdioMcpHost {
     if (!def) throw new Error(`MCP_SERVER_UNKNOWN:${id}`);
     if (def.validationError) throw Error(def.validationError);
     let c = this.clients.get(id);
-    if (!c || launchKey(c.def) !== launchKey(def)) { c?.stop(); c = def.transport === 'http' ? new HttpMcpClient(id, def) : new StdioClient(id, def, { log: this.log }); this.clients.set(id, c); }
+    if (!c || launchKey(c.def) !== launchKey(def)) { c?.stop(); c = def.transport === 'http' ? new HttpMcpClient(id, def, {oauthCredentials:this.oauthCredentials}) : new StdioClient(id, def, { log: this.log }); this.clients.set(id, c); }
     else c.def = def;
     return c;
   }
@@ -484,9 +488,10 @@ export class StdioMcpHost {
     return Object.entries(this.servers()).map(([id, def]) => {
       const c = this.clients.get(id);
       const stats = this.stats.get(id) || { calls: 0, failures: 0, refused: 0, lastCall: null };
-      if (def.validationError) return { id, catalogMatch:MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?false:undefined, name: def.name, role: def.role, transport: def.transport || 'stdio', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], stats };
+      if (def.validationError) return { id, catalogMatch:MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?false:undefined, name: def.name, role: def.role, transport: def.transport || 'stdio', command: '', status: 'FAILED', tools: [], error: def.validationError, startedAt: null, icon: 'mcp', agentAccess: 'off', deny: [], allowOpenLogin: false, stats };
       const sameLaunch = Boolean(c && launchKey(c.def) === launchKey(def));
-      const tools = (sameLaunch && c.initialized ? c.tools : []).map(t => {
+      const oauthStatus=isOAuthReference(def.tokenEnv)?this.oauthCredentials.status():null;
+      const tools = (sameLaunch && c.initialized && oauthStatus?.credentialConfigured!==false ? c.tools : []).map(t => {
         const reads = Boolean(t.readOnly || KNOWN_READ_ONLY[id]?.has(t.name));
         const consequence = reads ? 'READ' : id === 'git' && /push|merge|release|publish/i.test(t.name) ? 'PUBLISH'
           : ['shell','filesystem','git','repo','editor'].includes(id) ? 'LOCAL_MUTATION' : 'EXTERNAL_MUTATION';
@@ -498,14 +503,15 @@ export class StdioMcpHost {
       });
       return { id, name: def.name, role: def.role, transport: def.transport || 'stdio', command: def.transport === 'http' ? new URL(def.url).origin + new URL(def.url).pathname : `${path.basename(def.command)} ${def.args.join(' ')}`.slice(0, 200),
         credentialEnv: def.tokenEnv || undefined,
-        credentialConfigured: def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
+        credentialConfigured: oauthStatus?oauthStatus.credentialConfigured:def.tokenEnv ? Boolean(process.env[def.tokenEnv]) : null,
+        ...(oauthStatus?{oauthState:oauthStatus.state,accountVerifiedAt:oauthStatus.verifiedAt}:{}),
         allowOpenLogin: def.allowOpenLogin === true,
         catalogMatch: MCP_INTEGRATION_CATALOG.some(p=>p.id===id)?catalogDefinitionMatches(id,def):undefined,
         loginOpeningSupported: Boolean(pluginLoginPreset(id,def)),
         builtIn: Boolean(defaultServers(this)[id]),
         icon: def.icon, agentAccess: def.agentAccess, deny: def.deny, stats,
-        status: sameLaunch ? (c.initialized ? 'READY' : c.ready ? 'STARTING' : c.error ? 'FAILED' : 'STOPPED') : 'STOPPED',
-        tools, error: sameLaunch ? c.error || null : null, startedAt: sameLaunch ? c.startedAt || null : null };
+        status: oauthStatus?.credentialConfigured===false?'FAILED':sameLaunch ? (c.initialized ? 'READY' : c.ready ? 'STARTING' : c.error ? 'FAILED' : 'STOPPED') : 'STOPPED',
+        tools, error: oauthStatus?.credentialConfigured===false?'MCP_AUTH_REQUIRED':sameLaunch ? c.error || null : null, startedAt: sameLaunch ? c.startedAt || null : null };
     });
   }
 
@@ -568,7 +574,7 @@ export class StdioMcpHost {
       // Never retry a call after entering the transport. A remote error string
       // is not evidence that dispatch did not occur.
       const result = await c.request('tools/call', { name, arguments: args }, timeoutMs);
-      done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300) : null);
+      done(result?.isError === true ? 'tool_error' : 'ok', result?.isError === true ? (isOAuthReference(c.def.tokenEnv)?'MCP_REMOTE_TOOL_ERROR':String((result.content || []).map(x => x?.text || '').join(' ')).slice(0, 300)) : null);
       return result;
     } catch (e) {
       const message = String(e.message || e).slice(0,300); done('failed',message);

@@ -8,7 +8,7 @@ export const MCP_INTEGRATION_CATALOG = Object.freeze([
   {loginUrl:'https://dashboard.render.com/',id:'render',name:'Render',target:'https://mcp.render.com/mcp',icon:'mcp',tokenEnv:'RENDER_API_KEY',auth:'Operator-provided API-key reference; OAuth not yet supported by JACO MCP host',docs:'https://render.com/docs/mcp-server'},
   {loginUrl:'https://huggingface.co/settings/tokens',id:'huggingface',name:'Hugging Face',target:'https://huggingface.co/mcp',icon:'huggingface',tokenEnv:'',auth:'Public tools; optional HF_TOKEN for authenticated access',docs:'https://huggingface.co/docs/hub/hf-mcp-server'},
   {id:'cloudflare-api',name:'Cloudflare API',target:'https://mcp.cloudflare.com/mcp',icon:'cloudflare',tokenEnv:'CLOUDFLARE_API_TOKEN',loginUrl:'https://dash.cloudflare.com/',auth:'Scoped API token; Code Mode execution requires existing write authority',docs:'https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/'},
-  {id:'linear',name:'Linear',target:'https://mcp.linear.app/mcp',icon:'mcp',tokenEnv:'LINEAR_API_KEY',loginUrl:'https://linear.app/',auth:'Restricted API key or OAuth (manual key setup supported here)',docs:'https://linear.app/docs/mcp'},
+  {id:'linear',name:'Linear',target:'https://mcp.linear.app/mcp',icon:'mcp',tokenEnv:'LINEAR_API_KEY',loginUrl:'https://linear.app/',auth:'Read-only account sign-in via local OAuth preview; existing manual configurations are preserved',docs:'https://linear.app/docs/mcp'},
   {id:'context7',name:'Context7',target:'https://mcp.context7.com/mcp',icon:'mcp',tokenEnv:'CONTEXT7_API_KEY',loginUrl:'https://context7.com/',auth:'Bearer API key for documentation tools',docs:'https://context7.com/docs/installation'},
   {id:'stripe',name:'Stripe',target:'https://mcp.stripe.com/',icon:'mcp',tokenEnv:'STRIPE_MCP_API_KEY',loginUrl:'https://dashboard.stripe.com/',auth:'Restricted API key; read-only test access recommended; no payment authorization',docs:'https://github.com/stripe/ai/tree/main/tools/modelcontextprotocol'}
 ,
@@ -28,6 +28,7 @@ export function mcpConnectionState(provider, observed=true) {
   if (!provider) return 'AVAILABLE';
   if (provider.catalogMatch===false) return 'CUSTOM_CONFIGURATION';
   if (provider.agentAccess==='off') return 'AGENT_ACCESS_OFF';
+  if (provider.oauthState==='REFRESHING'||provider.oauthState==='REFRESH_REQUIRED') return 'CONNECTING';
   if (provider.credentialConfigured===false || /MCP_(?:AUTH|CREDENTIAL)_REQUIRED/.test(provider.error||'')) return 'AUTH_REQUIRED';
   if (provider.status==='FAILED') return 'ERROR';
   if (provider.status==='STARTING') return 'CONNECTING';
@@ -40,7 +41,7 @@ export function catalogDefinitionMatches(id,definition){
   const preset=MCP_INTEGRATION_CATALOG.find(p=>p.id===id);
   if(!preset || !definition || definition.transport!=='http' || definition.validationError) return false;
   try { if(new URL(definition.url).href!==new URL(preset.target).href) return false; } catch { return false; }
-  const refs=id==='huggingface'?['','HF_TOKEN','HUGGINGFACE_TOKEN']:[preset.tokenEnv||''];
+  const refs=id==='huggingface'?['','HF_TOKEN','HUGGINGFACE_TOKEN']:id==='linear'?['LINEAR_API_KEY','JACO_MCP_OAUTH_LINEAR']:[preset.tokenEnv||''];
   return refs.includes(definition.tokenEnv||'');
 }
 export function pluginLoginPreset(id,definition){

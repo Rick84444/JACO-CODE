@@ -1,0 +1,47 @@
+name: MCP OAuth read-only pilot
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/src/server/mcp/oauthReadonly*.mjs'
+      - 'tests/nova/mcp-oauth-*.test.mjs'
+      - 'runtime/src/server/mcp/httpMcpClient.mjs'
+      - 'runtime/src/server/mcp/stdioMcpHost.mjs'
+      - 'agents/lib/secret-store.mjs'
+      - 'agents/lib/vault-tools.mjs'
+      - 'runtime/tools/jaco-connect-mcp.mjs'
+      - '.github/workflows/mcp-oauth-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oauth-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked host dependencies
+        run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - name: Syntax
+        run: |
+          node --check runtime/src/server/mcp/oauthReadonly.mjs
+          node --check runtime/src/server/mcp/oauthReadonlySession.mjs
+          node --check runtime/src/server/mcp/oauthReadonlyCredentials.mjs
+          node --check runtime/src/server/mcp/oauthReadonlyConnection.mjs
+          node --check runtime/src/server/mcp/httpMcpClient.mjs
+          node --check runtime/src/server/mcp/stdioMcpHost.mjs
+          node --check tests/nova/mcp-oauth-readonly.test.mjs
+          node --check tests/nova/mcp-oauth-connection.test.mjs
+      - name: OAuth fixtures and local callback (no external account)
+        run: node --test tests/nova/mcp-oauth-readonly.test.mjs tests/nova/mcp-oauth-connection.test.mjs
