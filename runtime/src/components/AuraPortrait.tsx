@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
 import { useUiLanguage } from '../i18n/UiLanguage';
 import { workspaceReplyText } from '../lib/workspaceActions.mjs';
-import { speechParts } from '../lib/speechParts.mjs';
+import { takePerformancePlan, createCueGate } from '../lib/auraPerformance.mjs';
+import { analyzeAuraSpeech } from '../lib/auraSpeechAnalysis.mjs';
 
 export interface AuraPortraitChat {
   input: string;
@@ -46,6 +47,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const [speaking, setSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState(false);
   const [maskError, setMaskError] = useState(false);
+  const [bodyMotionReady,setBodyMotionReady]=useState(false);
+  const [motionFeedback,setMotionFeedback]=useState('');
   // Conversation mode: listen, send after a pause, hear the reply, listen again.
   const [conversation, setConversation] = useState(savedConversation);
   const [awaiting, setAwaiting] = useState(false);
@@ -104,6 +107,12 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       try { previous.cancel(); } catch { /* Already stopped. */ }
     }
     const text = workspaceReplyText(latestReply.content);
+    const plan=takePerformancePlan(latestReply.id,text);
+    const gate=createCueGate((cue:{type:string;value:string})=>{
+      if(cue.type==='motion')rig.current?.requestMotion(cue.value);
+      if(cue.type==='expression')rig.current?.setState({presentationTone:cue.value});
+    });
+    const token=gate.begin();let cueIndex=0;
     // Aura's own female neural voice (the same engine as her voice notes), played through an audio element so
     // the rig's formant tracker drives her mouth from the real sound. The browser voice is only a fallback.
     // Spoken sentence by sentence: the next part is synthesized while the current one plays, so Aura starts
@@ -111,19 +120,23 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     const controller = new AbortController();
     const audio = new Audio();
     const urls: string[] = [];
+    let partGeneration=0;
+    const clearPlayback=()=>{partGeneration++;rig.current?.setState({audioSource:null,speechPlayback:null});};
     const handle = {
       cancel: () => {
+        gate.cancel();rig.current?.setState({presentationTone:'neutral'});
         controller.abort();
         audio.pause();
         urls.forEach(u => URL.revokeObjectURL(u));
-        rig.current?.setState({ audioSource: null });
+        clearPlayback();
       },
     };
     const finish = () => {
       if (utterance.current !== handle) return;
       utterance.current = null;
       setSpeaking(false);
-      rig.current?.setState({ audioSource: null });
+      gate.cancel();rig.current?.setState({presentationTone:'neutral'});
+      clearPlayback();
       urls.forEach(u => URL.revokeObjectURL(u));
     };
     const browserFallback = () => {
@@ -136,45 +149,62 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
         if (utterance.current === handle && !['canceled', 'interrupted'].includes(event.error)) setVoiceError(true);
         finish();
       };
-      handle.cancel = () => { try { synthesis.cancel(); } catch { /* Engine unavailable. */ } };
+      const cancelAudio=handle.cancel;
+      handle.cancel = () => { cancelAudio();try { synthesis.cancel(); } catch { /* Engine unavailable. */ } };
       try { synthesis.speak(reply); } catch { setVoiceError(true); finish(); }
     };
     utterance.current = handle;
-    const parts = speechParts(text);
+    const parts=plan.parts;
     const synthesize = (part: string) => fetch('/api/aura/voice/speak', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
       body: JSON.stringify({ text: part, lang: locale }),
     }).then(async response => {
       if (!response.ok) throw new Error('VOICE_UNAVAILABLE');
-      const url = URL.createObjectURL(await response.blob());
+      const blob=await response.blob();
+      if(controller.signal.aborted)throw new Error('VOICE_CANCELLED');
+      const url = URL.createObjectURL(blob);
       urls.push(url);
-      return url;
+      const analysis=analyzeAuraSpeech(blob,controller.signal);
+      return {url,analysis};
     });
     // Lip sync listens to a copy of the stream; the audio element itself plays straight to the speakers, so a
     // suspended Web Audio context can never silence Aura.
     audio.onplay = () => {
       if (utterance.current !== handle) return;
       setSpeaking(true);
-      const tap = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.();
-      rig.current?.setState({ audioSource: tap ?? null, speaking: true });
+      gate.play(token,cueIndex,parts[cueIndex]?.cues);
+      let tap: MediaStream | null=null;
+      try{tap=(audio as HTMLAudioElement & {captureStream?:()=>MediaStream}).captureStream?.()??null;}catch{/* PCM analysis works without captureStream. */}
+      rig.current?.setState({ audioSource: tap, speaking: true });
     };
-    const playPart = (url: string) => new Promise<void>((resolve, reject) => {
-      audio.onended = () => resolve();
-      audio.onerror = () => reject(new Error('VOICE_PLAYBACK_FAILED'));
-      audio.src = url;
-      audio.play().catch(reject);
+    const playPart = (part: Awaited<ReturnType<typeof synthesize>>) => new Promise<void>((resolve, reject) => {
+      clearPlayback();
+      const generation=partGeneration;
+      // Join late analysis against currentTime, never restart or delay audible speech.
+      void part.analysis.then(timeline=>{
+        if(!timeline||controller.signal.aborted||utterance.current!==handle||generation!==partGeneration)return;
+        rig.current?.setState({speechPlayback:{audio,timeline}});
+      });
+      const finish=(error?:unknown)=>{controller.signal.removeEventListener('abort',cancel);clearPlayback();error?reject(error):resolve();};
+      const cancel=()=>finish(new Error('VOICE_CANCELLED'));
+      controller.signal.addEventListener('abort',cancel,{once:true});
+      audio.onended=()=>finish();
+      audio.onerror=()=>finish(new Error('VOICE_PLAYBACK_FAILED'));
+      audio.src=part.url;
+      audio.play().catch(finish);
     });
     void (async () => {
       let started = false;
       if (!parts.length) { finish(); return; }
       try {
-        let next = synthesize(parts[0]);
+        let next = synthesize(parts[0].text);
         for (let index = 0; index < parts.length; index++) {
-          const url = await next;
+          const part = await next;
           if (utterance.current !== handle) return;
           // Prefetch the following sentence while this one plays.
-          if (index + 1 < parts.length) { next = synthesize(parts[index + 1]); next.catch(() => {}); }
-          await playPart(url);
+          cueIndex=index;rig.current?.setState({presentationTone:'neutral'});
+          if (index + 1 < parts.length) { next = synthesize(parts[index + 1].text); next.catch(() => {}); }
+          await playPart(part);
           started = true;
           if (utterance.current !== handle) return;
         }
@@ -330,6 +360,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     ).then(instance=>{
       if(controller.signal.aborted){instance.dispose();return;}
       rig.current=instance;instance.setState(rigState.current);
+      setBodyMotionReady(element.dataset.avatarVersion==='V31');
     }).catch(()=>{if(!controller.signal.aborted)setMaskError(true);});
     return()=>{controller.abort();rig.current?.dispose();rig.current=null;};
   },[]);
@@ -347,10 +378,14 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
       Object.assign(rigState.current,p);rig.current?.setState(p);
     }} onPointerLeave={() => { Object.assign(rigState.current,{x:0,y:0});rig.current?.setState({x:0,y:0}); }}>
       <canvas ref={canvas} width={480} height={480} role="img"
-        aria-label={tr('Auras tredimensionella ljusgestalt', 'Aura’s three-dimensional lightform')}/>
+        aria-label={tr('Auras tredimensionella porträtt', 'Aura’s three-dimensional portrait')}/>
     </div>
     {maskError && <p role="status">{tr('Den tredimensionella gestalten kunde inte laddas. Chatten är fortfarande tillgänglig.', 'The 3D lightform could not load. Chat remains available.')}</p>}
     <p data-tone={tone}>{label}</p>
+    {bodyMotionReady&&<div className="aura-portrait-controls" aria-label={tr('Auras rörelser','Aura motion')}>
+      {([['explain','Visa','Present'],['advance','Gå framåt','Step forward'],['return','Tillbaka','Return']] as const).map(([action,sv,en])=><button type="button" key={action} onClick={()=>setMotionFeedback(rig.current?.requestMotion(action)?'':tr('Rörelsen är inte tillgänglig just nu.','Motion is unavailable right now.'))}>{tr(sv,en)}</button>)}
+      {motionFeedback&&<span role="status">{motionFeedback}</span>}
+    </div>}
     {chat && <div className="aura-portrait-conversation">
       {latestReply && <div className="aura-portrait-reply" aria-live="polite">{workspaceReplyText(latestReply.content)}</div>}
       <textarea value={chat.input} onChange={event => { const text = event.currentTarget.value; chat.setInput(() => text); }}

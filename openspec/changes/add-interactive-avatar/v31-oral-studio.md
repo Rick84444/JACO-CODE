@@ -1,0 +1,7 @@
+# V31 oral surface and stage refinement
+
+The original 2048px skin atlas contains a rotated lip island centered approximately at UV (0.909,0.515). A bounded elliptical mask adjusts only local clearcoat and roughness. The original teeth and tongue use separate named materials, so enamel and moist tongue surface parameters are adjusted independently. No anatomy or original texture is changed. Existing eyelid and eye meshes retain their geometry and eye optical response; a tear meniscus and anatomical cornea are not added.
+
+Desktop wide framing adds a true planar reflection using Three r186 Reflector (MIT, shipped from the existing dependency), one 256x256 half-float target with no multisampling and five-tap softening. It is activated only for wide framing at high quality and supported graphics hardware; mobile and low-quality rendering retain the simple dark floor. The original portrait framing is unchanged. No mirror is visible when wide framing is inactive. The reflection is a second render pass, not free; device FPS and real V31 frame appearance must be measured.
+
+Acceptance: unit mask boundaries, exact named materials, stage dependency resolution, actual Chromium WebGL rendering and nonempty planar reflection target on a synthetic fixture. Original GLB rendering and subjective comparison remain separate acceptance requirements.

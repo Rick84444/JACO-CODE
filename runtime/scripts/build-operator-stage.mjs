@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { AURA_STAGE_FILES } from '../operator-stage/assets.mjs';
 
 const runtime = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(runtime, 'dist', 'operator-stage');
@@ -19,6 +20,7 @@ export const STAGE_FILES = {
   'vendor/aura-rig.mjs': 'src/lib/auraRigLightform.mjs',
   'vendor/workspace-actions.mjs': 'src/lib/workspaceActions.mjs',
   'vendor/speech-parts.mjs': 'src/lib/speechParts.mjs',
+  ...AURA_STAGE_FILES,
 };
 export const THREE_FILES = {
   'vendor/three/build/three.module.js': 'build/three.module.js',
@@ -26,6 +28,7 @@ export const THREE_FILES = {
   'vendor/three/addons/loaders/GLTFLoader.js': 'examples/jsm/loaders/GLTFLoader.js',
   'vendor/three/addons/utils/BufferGeometryUtils.js': 'examples/jsm/utils/BufferGeometryUtils.js',
   'vendor/three/addons/utils/SkeletonUtils.js': 'examples/jsm/utils/SkeletonUtils.js',
+  'vendor/three/addons/objects/Reflector.js': 'examples/jsm/objects/Reflector.js',
   'vendor/three/LICENSE': 'LICENSE',
 };
 

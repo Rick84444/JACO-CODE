@@ -4,6 +4,36 @@ on:
     paths:
       - '.github/workflows/aura-rigged-model.yml'
       - 'runtime/scripts/inspect-aura-rig.mjs'
+      - 'runtime/scripts/inspect-aura-v31.mjs'
+      - 'runtime/scripts/verify-aura-optical-webgl.mjs'
+      - 'runtime/scripts/install-aura-v31.mjs'
+      - 'runtime/scripts/prepare-aura-v31.mjs'
+      - 'runtime/package.json'
+      - 'assets/aura-v31/**'
+      - 'runtime/src/lib/auraRigLightform.mjs'
+      - 'runtime/src/lib/auraSpeech*.mjs'
+      - 'runtime/src/lib/auraNeuralFace*.mjs'
+      - 'runtime/src/server/auraNeuralFaceHost*.mjs'
+      - 'runtime/native/audio2face/**'
+      - 'runtime/src/lib/auraBody*.mjs'
+      - 'runtime/src/lib/auraHumanBehavior*.mjs'
+      - 'runtime/src/lib/auraPerformance*.mjs'
+      - 'runtime/src/components/AuraChatPanel.tsx'
+      - 'runtime/server.ts'
+      - 'runtime/src/lib/auraOptics*.mjs'
+      - 'runtime/src/lib/auraV31OpticalRig.mjs'
+      - 'runtime/src/lib/auraSurfaceDetail*.mjs'
+      - 'runtime/src/lib/auraOralOptics*.mjs'
+      - 'runtime/src/lib/auraStudioFloor.mjs'
+      - 'runtime/src/lib/auraSecondary*.mjs'
+      - 'runtime/src/lib/workspaceActions*.mjs'
+      - 'runtime/operator-stage/**'
+      - 'runtime/scripts/build-operator-stage.mjs'
+      - 'tests/nova/operator-stage-assets.test.mjs'
+      - 'runtime/src/lib/vendor/headaudio/**'
+      - 'runtime/src/components/AuraPortrait.tsx'
+      - 'runtime/public/branding/aura-anatomical.glb'
+      - 'openspec/changes/add-interactive-avatar/specs/interactive-avatar/spec.md'
       - 'openspec/changes/add-interactive-avatar/rigged-model-evaluation.md'
   workflow_dispatch:
 permissions:
@@ -19,6 +49,31 @@ jobs:
           node-version: '24'
       - name: Verify exact CC0 model and inspect real skeleton and morphs
         run: node runtime/scripts/inspect-aura-rig.mjs
+      - name: Verify V31 candidate if supplied (legacy evidence is not V31 approval)
+        shell: bash
+        run: |
+          set -o pipefail
+          node runtime/scripts/prepare-aura-v31.mjs
+          if [ -f runtime/public/branding/aura-anatomical.glb ]; then
+            node runtime/scripts/inspect-aura-v31.mjs runtime/public/branding/aura-anatomical.glb | tee aura-rig-evidence/v31-manifest.json
+          else
+            echo "::notice::V31 binary not supplied; V31 structural and visual acceptance remain pending."
+            printf '%s\n' '{"version":"V31","structuralStatus":"NOT_TESTED","visualStatus":"NOT_TESTED","reason":"ASSET_MISSING"}' > aura-rig-evidence/v31-manifest.json
+          fi
+      - name: Test full facial speech pipeline contracts and pinned classifier
+        run: |
+          node --check runtime/src/lib/auraRigLightform.mjs
+          node --check runtime/src/lib/auraSpeechWorker.mjs
+          node --check runtime/src/lib/auraSpeechAnalysis.mjs
+          node --check runtime/src/lib/auraBodyRig.mjs
+          node --check runtime/src/lib/auraPerformance.mjs
+          node --check runtime/src/lib/auraV31OpticalRig.mjs
+          node --check runtime/src/lib/auraSecondaryRig.mjs
+          node --test runtime/src/lib/auraSpeechTimeline.test.mjs runtime/src/lib/auraNeuralFace.test.mjs runtime/src/server/auraNeuralFaceHost.test.mjs runtime/src/lib/auraBodyMotion.test.mjs runtime/src/lib/auraHumanBehavior.test.mjs runtime/src/lib/auraPerformance.test.mjs runtime/src/lib/auraOptics.test.mjs runtime/src/lib/auraSurfaceDetail.test.mjs runtime/src/lib/auraOralOptics.test.mjs runtime/src/lib/auraSecondaryMotion.test.mjs runtime/src/lib/workspaceActions.test.mjs tests/nova/operator-stage-assets.test.mjs
+      - name: Install isolated pinned Three dependency for real WebGL shader probe
+        run: npm install --prefix "$RUNNER_TEMP/aura-webgl" --ignore-scripts --no-audit --no-fund --save-exact three@0.186.1
+      - name: Compile skin, eye and hair shaders in Chromium
+        run: node runtime/scripts/verify-aura-optical-webgl.mjs "$RUNNER_TEMP/aura-webgl/node_modules/three"
       - uses: actions/upload-artifact@v4
         with:
           name: aura-verified-rig

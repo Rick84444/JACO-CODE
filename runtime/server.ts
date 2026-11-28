@@ -1,3 +1,4 @@
+import { createNeuralFaceHost } from './src/server/auraNeuralFaceHost.mjs';
 import { readAuraServiceHealth } from '../agents/lib/aura-service-health.mjs';
 import { readAuraDesktopLiveFrame } from '../agents/lib/aura-desktop-live-view.mjs';
 import { missionScreenshotPath } from '../agents/lib/mission-screen-frame.mjs';
@@ -88,6 +89,7 @@ import { auraChatViaSeer, AURA_CANONICAL_OBJECTIVE } from "../agents/lib/aura-se
 import { auraAlwaysAnswers, answerInOrder, auraChatDeadlines, auraStatusReply, chatBudget } from "../agents/lib/aura-always-answers.mjs";
 import { createLiteGoal } from "./src/server/connected/liteGoal.mjs";
 import { WORKSPACE_CONTROL_INSTRUCTION, STAGE_CONTROL_INSTRUCTION, workspaceReplyText } from "./src/lib/workspaceActions.mjs";
+import { PERFORMANCE_INSTRUCTION } from "./src/lib/auraPerformance.mjs";
 import { operatorStageAssets } from "./operator-stage/assets.mjs";
 import { webSearch } from "./src/server/mcp/webSearch.mjs";
 import { geminiSpeak } from "./src/server/connected/geminiVoice.mjs";
@@ -1054,6 +1056,19 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   // (sv-SE-SofieNeural through the voiceChannel edge engine). The operator chose it knowing the spoken text is sent
   // to Microsoft. Local Piper Alma (2026-11-19, CC-BY-4.0) stays as the fallback, so she still speaks offline.
   // JACO_AURA_VOICE=piper puts the local voice first again.
+  const neuralFaceHost=createNeuralFaceHost();
+  app.get('/api/aura/face/health',requireLocalUiSameOrigin,async (_req,res)=>{
+    res.set('Cache-Control','no-store').json({available:await neuralFaceHost.available(),engine:'audio2face-local'});
+  });
+  app.post('/api/aura/face/analyze',requireLocalUiSameOrigin,async (req,res)=>{
+    const controller=new AbortController();
+    const close=()=>controller.abort();
+    res.once('close',close);
+    try{
+      const data=await neuralFaceHost.analyze(req.body?.pcm,controller.signal);
+      if(!res.destroyed&&!res.writableEnded){if(data)res.json(data);else res.status(503).json({error:'A2F_UNAVAILABLE',fallback:'headaudio'});}
+    }finally{res.off('close',close);}
+  });
   app.post('/api/aura/voice/speak', requireLocalUiSameOrigin, async (req, res) => {
     const text = typeof req.body?.text === 'string' ? req.body.text : '';
     if (!text.trim() || text.length > 6000) return res.status(400).json({ success: false, error: 'VOICE_TEXT_INVALID' });
@@ -5639,9 +5654,9 @@ const notifyPhone = async (action) => {
       const ragContext = [...(Array.isArray(req.body.ragContext) ? req.body.ragContext : []), ...attachmentContext(req.body.attachmentIds)];
       // The local GUI can show views and files Aura asks for while she talks (display only, never execution).
       const chatSource = req.body?.connectedSession?.source;
-      if (chatSource === 'Aura GUI') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: WORKSPACE_CONTROL_INSTRUCTION } });
+      if (chatSource === 'Aura GUI') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: WORKSPACE_CONTROL_INSTRUCTION + ' ' + PERFORMANCE_INSTRUCTION } });
       // The Operator Stage: Aura lights up the panel she is talking about (display only, never execution).
-      else if (chatSource === 'Aura Operator Stage') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: STAGE_CONTROL_INSTRUCTION } });
+      else if (chatSource === 'Aura Operator Stage') ragContext.push({ source: 'jaco://workspace-control', content: { instruction: STAGE_CONTROL_INSTRUCTION + ' ' + PERFORMANCE_INSTRUCTION } });
       const userMsg = String(message || "Hi");
       const cognitiveActivation = cognitiveActivationPreview(userMsg, {
         knowledge: continuumSurface.runtime.knowledge,

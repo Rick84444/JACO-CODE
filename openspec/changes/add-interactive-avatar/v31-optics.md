@@ -1,0 +1,7 @@
+# V31 optical refinement
+
+The pinned original GLB contains the Human.body 2048px albedo and subtle face micro-normal, plus Human.high-poly 1024px eye atlas. The two measured pupil island centers are (0.70753, 0.29754) and (0.29175, 0.70956) in glTF UV coordinates. The original black-disc radius is approximately 0.0393 atlas units. The experimental radial warp stays inside the iris boundary (0.108) and preserves the surrounding texture. A time-based light proxy targets a bounded pupil scale, with faster constriction than dilation; reduced motion restores the authored pupil. This is not webcam sensing or measurement of real ambient lux.
+
+The existing renderer retains geometry and authored texture references. Skin and eye materials alone use restrained clearcoat and IOR refinements. The procedural studio environment is a small one-time filtered reflection texture, with warm-neutral key, cool fill and rim, and filmic tone mapping. There is no new external asset, post-process pass, corneal geometry or actual subsurface scattering. The other authored materials remain unchanged, although their appearance responds to lighting.
+
+Verification: unit tests for bounded monotonic UV remapping, response timing, exact material selection, source/release stage dependencies. Browser shader compilation, rendered pupil and skin comparison, real V31 frame capture and Windows/Android GPU budget are required for acceptance. The V31 binary and live connection remain separate prerequisites. Do not equate configured shader with rendered evidence.

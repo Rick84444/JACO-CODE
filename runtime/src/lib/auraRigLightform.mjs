@@ -1,4 +1,13 @@
+import {FACE_CHANNELS,createNeuralMixer} from './auraNeuralFace.mjs';
+import {createSecondaryRig} from './auraSecondaryRig.mjs';
+import {createV31OpticalRig} from './auraV31OpticalRig.mjs';
+import {createHumanBehavior} from './auraHumanBehavior.mjs';
+import {createAuraBodyRig} from './auraBodyRig.mjs';
+import {VISEMES,emptySpeechPose,sampleSpeechPose,approachSpeechPose,createNaturalBlink,validSpeechTimeline} from './auraSpeechTimeline.mjs';
 import * as THREE from 'three';
+// Embedded textures load as image elements: the default loader fetches blob: URLs, which the page's
+// connect-src 'self' refuses, and the model then renders untextured (observed 2026-11-28 on the Operator Stage).
+const imageElementLoader=()=>new GLTFLoader().register(parser=>{parser.textureLoader=new THREE.TextureLoader(parser.options.manager);return {name:'JACO_image_element_textures'};});
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
@@ -6,6 +15,34 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 // The pinned CC0 MPFB source and build-time compaction are documented in OpenSpec.
 const ASSET='/branding/aura-rig.glb';
 const EXPECTED_BYTES=7465400;
+const V31_ASSET='/branding/aura-anatomical.glb';
+const V31_BYTES=45304080;
+const V31_SHA256='ea9c4646cf197f042fa4a39ea8ecd5a438adb1b0865c8eddb0749d0915bd6129';
+async function loadAvatar(signal){
+  // Optional locally installed V31; keep the existing lightform if not installed.
+  try{
+    const response=await fetch(V31_ASSET,{signal,cache:'force-cache'});
+    if(response.ok&&!response.headers.get('content-type')?.includes('text/html')){
+      const bytes=await response.arrayBuffer();
+      const header=new DataView(bytes);
+      if(bytes.byteLength!==V31_BYTES||header.getUint32(0,true)!==0x46546c67||header.getUint32(4,true)!==2||header.getUint32(8,true)!==V31_BYTES)throw Error('AURA_V31_HEADER');
+      if(globalThis.crypto?.subtle){
+        const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+        if(hash!==V31_SHA256)throw Error('AURA_V31_HASH');
+      }
+      return {gltf:await imageElementLoader().parseAsync(bytes,''),anatomical:true};
+    }
+    if(!response.ok&&response.status!==404)throw Error('AURA_V31_HTTP_'+response.status);
+  }catch(error){
+    if(signal?.aborted)throw error;
+    console.warn('Aura V31 unavailable; retaining lightform',error);
+  }
+  const response=await fetch(ASSET,{signal,cache:'force-cache'});
+  if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
+  const bytes=await response.arrayBuffer();
+  if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
+  return {gltf:await imageElementLoader().parseAsync(bytes,''),anatomical:false};
+}
 const FRAME_TIME=1000/30;
 function seeded(seed){let s=seed>>>0;return()=>((s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296);}
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -981,13 +1018,13 @@ void main(){
 }
 
 function disposeModel(model){
-  const geometries=new Set(),materials=new Set(),skeletons=new Set();
+  const geometries=new Set(),materials=new Set(),skeletons=new Set(),textures=new Set();
   model?.traverse(o=>{
     if(o.geometry)geometries.add(o.geometry);
     if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>materials.add(m));
     if(o.skeleton)skeletons.add(o.skeleton);
   });
-  geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());skeletons.forEach(s=>s.dispose());
+  geometries.forEach(g=>g.dispose());materials.forEach(m=>{for(const value of Object.values(m))if(value?.isTexture)textures.add(value);m.dispose();});textures.forEach(t=>t.dispose());skeletons.forEach(s=>s.dispose());
 }
 
 /**
@@ -996,13 +1033,9 @@ function disposeModel(model){
  * @param {{signal?: AbortSignal, onError?: (error: unknown) => void, relaxedGaze?: boolean, trackPointer?: boolean, leadWithEyes?: boolean, distantField?: boolean, stars?: boolean}} [options]
  */
 export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=true,trackPointer=true,leadWithEyes=false,distantField=false,stars=true}={}){
-  const response=await fetch(ASSET,{signal,cache:'force-cache'});
-  if(!response.ok)throw Error('AURA_RIG_ASSET_'+response.status);
-  const bytes=await response.arrayBuffer();
-  if(bytes.byteLength!==EXPECTED_BYTES)throw Error('AURA_RIG_ASSET_SIZE');
-  const gltf=await new GLTFLoader().parseAsync(bytes,'');
+  const {gltf,anatomical}=await loadAvatar(signal);
   const model=gltf.scene;
-  let renderer,geometry,material,observer,domTelemetryObserver,lightBody,voiceTracker,qualityGovernor,behaviorEngine,raf=0,disposed=false;
+  let renderer,geometry,material,observer,domTelemetryObserver,lightBody,voiceTracker,qualityGovernor,behaviorEngine,secondaryRig,raf=0,disposed=false;
   const motion=window.matchMedia('(prefers-reduced-motion: reduce)');
   let cleanup=()=>{};
   try{
@@ -1012,6 +1045,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     if(names.some(n=>!bones.has(n)))throw Error('AURA_RIG_BONES');
     const morphs=[];model.traverse(o=>{if(o.isSkinnedMesh&&o.morphTargetDictionary)morphs.push(o);});
     const required=['eyeBlinkLeft','eyeBlinkRight','jawOpen','mouthSmileLeft','mouthSmileRight','browInnerUp','viseme_aa','viseme_O'];
+    if(anatomical)required.push(...VISEMES.filter(n=>!required.includes(n)),'mouthClose','mouthPressLeft','mouthPressRight');
     const face=morphs.find(m=>required.every(n=>n in m.morphTargetDictionary));
     if(!face)throw Error('AURA_RIG_MORPHS');
     const probes=['eyeBlinkLeft','jawOpen'].map(name=>{
@@ -1035,7 +1069,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     };
     model.updateMatrixWorld(true);
     const isMobile=window.innerWidth<768;
-    const groups=createSamples(model,isMobile?.64:1);
+    const groups=anatomical?[]:createSamples(model,isMobile?.64:1);
     const total=groups.reduce((n,g)=>n+g.samples.length,0);
     geometry=new THREE.BufferGeometry();
     const positions=new Float32Array(total*3),normals=new Float32Array(total*3);
@@ -1053,17 +1087,40 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending
     });
     const scene=new THREE.Scene(),cloud=new THREE.Points(geometry,material);
-    cloud.frustumCulled=false;scene.add(cloud);
+    cloud.frustumCulled=false;if(!anatomical)scene.add(cloud);
 
     const camera=new THREE.PerspectiveCamera(31,1,.03,20);
     camera.position.set(0,1.570,1.05);camera.lookAt(0,1.540,.03);
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:true});
     renderer.setClearColor(0x000000,0);
 
-    lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField,stars);
+    if(anatomical){
+      // Render the authored GLB materials and meshes in the SAME portrait camera/canvas.
+      // Reuse the existing pose, morph, voice and cognitive-state logic below.
+      model.traverse(o=>{if(o.isSkinnedMesh)o.frustumCulled=false;});
+      scene.add(model);
+      const optics=createV31OpticalRig(scene,model,renderer);
+      lightBody={
+        update(_t,_e,_b,_s,_q,_d,_p,dt,reduced){
+          const status=optics.update(dt,reduced);
+          canvas.dataset.eyePupilScale=status.pupilScale.toFixed(3);
+          canvas.dataset.eyePupilShader=status.pupilReady?'configured':'unavailable';
+          canvas.dataset.studioEnvironment=status.environmentReady?'configured':'unavailable';
+          canvas.dataset.opticalSurfaceCount=String(status.surfaceCount);
+          canvas.dataset.skinDetailShader=status.skinDetailReady?'configured':'unavailable';
+          canvas.dataset.hairDetailShader=status.hairDetailReady?'configured':'unavailable';
+        },
+        dispose(){optics.dispose();}
+      };
+    }else{
+      lightBody=createLightBody(scene,model,bones,groups,isMobile,distantField,stars);
+    }
     voiceTracker=createVoiceFormantTracker();
     qualityGovernor=createQualityGovernor(isMobile);
     behaviorEngine=createBehaviorEngine();
+    const bodyRig=anatomical?createAuraBodyRig(model,bones):null;
+    const human=anatomical?createHumanBehavior():null;
+    secondaryRig=anatomical?createSecondaryRig(scene,model,bones,renderer,isMobile):null;
 
     // Pre-allocated spring state objects (zero array allocations per frame)
     const yawSpring={val:0,vel:0};
@@ -1077,14 +1134,17 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     };
 
     let energy=0,gazeX=0,gazeY=0,smoothJaw=0;
+    const speechPose=emptySpeechPose(),speechTarget=emptySpeechPose(),naturalBlink=createNaturalBlink();
+    const neuralMixer=createNeuralMixer();let neuralPlayback=null;
+    let speechAccent=0,previousSpeechLevel=0;
     let listeningSince=0, previousYaw=0;
     let smoothAA=0,smoothO=0,smoothE=0,smoothU=0,decisionBlend=0,pupilSize=0.31;
     let pointerX=0,pointerY=0,camX=0,camY=0,busPhase=null;
     let last=-Infinity,lastStepTime=0;
     let state={
       active:false,speaking:false,listening:false,
-      cognitivePhase:null,
-      x:0,y:0,audioLevel:null,phonemes:null
+      cognitivePhase:null,presentationTone:'neutral',
+      x:0,y:0,audioLevel:null,phonemes:null,speechPlayback:null
     };
     const temp=new THREE.Vector3(),q=new THREE.Quaternion(),euler=new THREE.Euler(0,0,0,'YXZ');
     const rotate=(name,x,y,z)=>{const entry=bones.get(name);if(!entry)return;entry.bone.quaternion.copy(entry.base).multiply(q.setFromEuler(euler.set(x,y,z,'YXZ')));};
@@ -1161,7 +1221,16 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
 
       const liveFormants=voiceTracker.sample();
       const hasExternalLevel=typeof state.audioLevel==='number'&&Number.isFinite(state.audioLevel);
-      const currentAudioLevel=liveFormants?liveFormants.level:(hasExternalLevel?finiteClamp(state.audioLevel,0,1,0):0);
+      const playback=anatomical?state.speechPlayback:null;
+      const timed=Boolean(playback&&validSpeechTimeline(playback.timeline)&&playback.audio);
+      const mediaPlaying=Boolean(playback?.audio&&state.speaking&&!playback.audio.paused&&!playback.audio.ended&&!still);
+      const playing=timed&&mediaPlaying;
+      if(neuralPlayback!==playback){neuralMixer.update(null,NaN,dt,false);neuralPlayback=playback;}
+      const neural=neuralMixer.update(playback?.timeline?.neural,mediaPlaying?playback.audio.currentTime:NaN,dt,mediaPlaying);
+      if(timed){sampleSpeechPose(playback.timeline,playing?playback.audio.currentTime:NaN,speechTarget);}
+      else sampleSpeechPose(null,NaN,speechTarget);
+      if(still){sampleSpeechPose(null,NaN,speechPose);}else approachSpeechPose(speechPose,speechTarget,dt);
+      const currentAudioLevel=timed?speechTarget.level:(liveFormants?liveFormants.level:(hasExternalLevel?finiteClamp(state.audioLevel,0,1,0):0));
 
       const activeSignal=Number(state.active||state.speaking||state.listening||isAnalyzing||isVerifying)+currentAudioLevel*0.48;
       energy=still?Number(state.active):energy+(activeSignal-energy)*.08;
@@ -1176,13 +1245,14 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const inputX=Math.abs(state.x)>0.01?finiteClamp(state.x,-1,1,0):pointerX;
       const inputY=Math.abs(state.y)>0.01?finiteClamp(state.y,-1,1,0):pointerY;
 
+      const humanPose=human?.update({presentationTone:state.presentationTone,phase,active:state.active,speaking:state.speaking,listening:state.listening,level:currentAudioLevel,x:inputX,y:inputY},dt,still);
       const contact=leadWithEyes&&state.listening&&!still;
       const contactAge=contact?Math.max(0,t-listeningSince):0;
       const follow=smoothstep(.22,.90,contactAge);
       const idleYaw=clamp(inputX,-1,1)*.36+organicYaw+verifyScanX*.35;
-      const targetYaw=still?0:contact?previousYaw*(1-follow)+idleYaw*.12*follow:idleYaw;
-      const targetPitch=still?0:clamp(inputY,-1,1)*.16+organicPitch+(state.listening?.032:0)-(isAnalyzing?.025:0);
-      const targetRoll=still?0:organicRoll-targetYaw*.15+(state.listening?.042:0)+analyzeTilt;
+      const targetYaw=still?0:humanPose?humanPose.headYaw:contact?previousYaw*(1-follow)+idleYaw*.12*follow:idleYaw;
+      const targetPitch=still?0:humanPose?humanPose.headPitch:clamp(inputY,-1,1)*.16+organicPitch+(state.listening?.032:0)-(isAnalyzing?.025:0);
+      const targetRoll=still?0:humanPose?humanPose.headRoll:organicRoll-targetYaw*.15+(state.listening?.042:0)+analyzeTilt;
 
       if(still){
         yawSpring.val=yawSpring.vel=pitchSpring.val=pitchSpring.vel=rollSpring.val=rollSpring.vel=camX=camY=0;
@@ -1198,18 +1268,18 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       camera.lookAt(0,1.540,.03);
 
       const breathPhase=t*1.15;
-      const breath=still?0:Math.sin(breathPhase)+.24*Math.sin(breathPhase*2.0-.55);
+      const breath=still?0:humanPose?humanPose.breath:Math.sin(breathPhase)+.24*Math.sin(breathPhase*2.0-.55);
       rotate('Spine2',still?0:.021*breath,yaw*.16,roll*.24);
       rotate('Neck',pitch*.36-.008*breath,yaw*.28,roll*.34);
-      rotate('Head',pitch*.72+(state.speaking&&!still?.018*Math.sin(t*3.9)*clamp(smoothJaw*2.5,0.2,1.0):0),yaw*.76,roll*.64);
+      rotate('Head',pitch*.72+(!anatomical&&state.speaking&&!still?.018*Math.sin(t*3.9)*clamp(smoothJaw*2.5,0.2,1.0):0),yaw*.76,roll*.64);
       rotate('LeftShoulder',still?0:.016*breath,0,-.009*breath);
       rotate('RightShoulder',still?0:.016*breath+.003,0,.009*breath);
 
-      for(let j=0;j<4;j++){
+      if(!secondaryRig)for(let j=0;j<4;j++){
         const lag=j*.46;
         rotate(j?'Ponytail'+j:'PonytailRoot',
-          still?0:.046*Math.sin(t*1.14-lag)-pitch*.13,
-          still?0:.076*Math.sin(t*.96-lag)-yaw*.19,
+          still?0:humanPose?humanPose.hairPitch*(1+j*.18):.046*Math.sin(t*1.14-lag)-pitch*.13,
+          still?0:humanPose?humanPose.hairYaw*(1+j*.18):.076*Math.sin(t*.96-lag)-yaw*.19,
           still?0:-roll*.22
         );
       }
@@ -1217,10 +1287,13 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const blinkCycle=t%5.3;
       const b1=smoothstep(1.98,2.06,blinkCycle)*(1-smoothstep(2.06,2.23,blinkCycle));
       const b2=smoothstep(2.32,2.39,blinkCycle)*(1-smoothstep(2.39,2.54,blinkCycle))*.84;
-      const blink=still?0:Math.max(b1,b2);
+      const blink=still?0:anatomical?naturalBlink(t,currentAudioLevel):Math.max(b1,b2);
 
-      const visemes=behaviorEngine.computeVisemes(t,still,state,liveFormants,hasExternalLevel);
-      smoothJaw=still?0:finiteClamp(smoothJaw+(visemes.jaw-smoothJaw)*.32,0,1,0);
+      // V31 never pretends that the synthetic cadence is a measured phoneme.
+      const canUseFallback=!anatomical||Boolean(liveFormants||hasExternalLevel||state.phonemes);
+      const visemes=behaviorEngine.computeVisemes(t,still||timed||!canUseFallback,state,liveFormants,hasExternalLevel);
+      smoothJaw=timed?speechPose.jaw:still?0:finiteClamp(smoothJaw+(visemes.jaw-smoothJaw)*(anatomical?1-Math.exp(-dt/.035):.32),0,1,0);
+      if(anatomical){const rise=Math.max(0,currentAudioLevel-previousSpeechLevel);speechAccent=Math.max(speechAccent*Math.exp(-dt/0.18),state.speaking?Math.min(1,rise*2.2):0);previousSpeechLevel=currentAudioLevel;}
       smoothAA=still?0:finiteClamp(smoothAA+(visemes.aa-smoothAA)*.30,0,1,0);
       smoothO=still?0:finiteClamp(smoothO+(visemes.O-smoothO)*.30,0,1,0);
       smoothE=still?0:finiteClamp(smoothE+(visemes.E-smoothE)*.28,0,1,0);
@@ -1229,35 +1302,89 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const targetPupil=0.30+(isAnalyzing?0.065:0)+(state.listening?0.045:0)+0.03*energy+0.02*Math.sin(t*0.7);
       pupilSize=still?0.32:pupilSize+(targetPupil-pupilSize)*0.12;
 
-      const smile=still?.09:.09+.045*(1+Math.sin(t*.72))+.04*energy-(isAnalyzing?.03:0);
+      const smile=humanPose?humanPose.smile:still?.09:.09+.045*(1+Math.sin(t*.72))+.04*energy-(isAnalyzing?.03:0);
       const microSaccadeX=still?0:(isVerifying?verifyScanX:(.032*Math.sin(t*2.05)+.018*Math.cos(t*4.9)));
       const microSaccadeY=still?0:.022*Math.cos(t*1.75)-(isVerifying?.03:0);
       const gazeWeight=relaxedGaze&&state.listening?.15:1;
-      const eyeTarget=contact?clamp(-yaw*1.8+microSaccadeX*.05,-.55,.55):(yaw*.44+microSaccadeX)*gazeWeight;
-      gazeX=still?0:gazeX+(eyeTarget-gazeX)*(contact?1-Math.exp(-dt*24):.24);
-      gazeY=still?0:gazeY+((pitch*.46+microSaccadeY)*gazeWeight-gazeY)*.24;
+      const eyeTarget=humanPose?humanPose.eyeX:contact?clamp(-yaw*1.8+microSaccadeX*.05,-.55,.55):(yaw*.44+microSaccadeX)*gazeWeight;
+      gazeX=still?0:gazeX+(eyeTarget-gazeX)*(humanPose?1-Math.exp(-dt/.045):contact?1-Math.exp(-dt*24):.24);
+      gazeY=still?0:gazeY+((humanPose?humanPose.eyeY:(pitch*.46+microSaccadeY)*gazeWeight)-gazeY)*(humanPose?1-Math.exp(-dt/.045):.24);
 
-      const squint=still?0:finiteClamp(smile*.45+visemes.cheek+(isAnalyzing?.14:0),0,.38,0);
+      const squint=still?0:humanPose?humanPose.cheek:finiteClamp(smile*.45+visemes.cheek+(isAnalyzing?.14:0),0,.38,0);
 
-      const lid=relaxedGaze?.18+.82*blink:blink;
+      const lid=anatomical?blink:(relaxedGaze?.18+.82*blink:blink);
       assign('eyeBlinkLeft',lid);assign('eyeBlinkRight',lid);
       assign('eyeSquintLeft',squint);assign('eyeSquintRight',squint);
       assign('cheekSquintLeft',squint*.7);assign('cheekSquintRight',squint*.7);
       assign('jawOpen',smoothJaw);
-      assign('viseme_aa',smoothAA);
-      assign('viseme_O',smoothO);
-      assign('viseme_E',smoothE);
-      assign('viseme_U',smoothU);
-      assign('mouthSmileLeft',smile);assign('mouthSmileRight',smile);
-      assign('browInnerUp',still?0:.05+.15*energy*(.5+.5*Math.sin(t*1.25))+smoothJaw*.15+(isDecision?.14:0));
-      assign('browOuterUpLeft',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
-      assign('browOuterUpRight',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
-      assign('noseSneerLeft',smoothJaw*.12);assign('noseSneerRight',smoothJaw*.12);
+      if(anatomical){
+        // The GLB has the full Oculus set, including teeth/tongue morphs.
+        for(let i=0;i<VISEMES.length;i++){
+          let value=timed?speechPose.weights[i]:0;
+          if(!timed){if(i===0)value=smoothAA*.65;else if(i===1)value=smoothE*.65;else if(i===3)value=smoothO*.65;else if(i===4)value=smoothU*.65;}
+          assign(VISEMES[i],value);
+        }
+        assign('mouthClose',timed?speechPose.close:0);
+        assign('mouthPressLeft',timed?speechPose.press:0);assign('mouthPressRight',timed?speechPose.press:0);
+        assign('mouthSmileLeft',smile);assign('mouthSmileRight',smile*.88);
+        assign('browInnerUp',humanPose?.brow??0);
+        assign('browOuterUpLeft',(humanPose?.brow??0)*.62);
+        assign('browOuterUpRight',(humanPose?.brow??0)*.48);
+        // Eyelids track vertical gaze without stacking on a closed blink.
+        assign('eyeWideLeft',still?0:Math.max(0,gazeY)*.25*(1-blink));
+        assign('eyeWideRight',still?0:Math.max(0,gazeY)*.25*(1-blink));
+        canvas.dataset.humanBehavior=humanPose?.mode||'idle';
+        canvas.dataset.speechAccent=(humanPose?.accent||0).toFixed(3);
+        assign('noseSneerLeft',0);assign('noseSneerRight',0);
+        // One owner for speech channels: crossfade the local viseme pose into the
+        // named SDK pose. Non-speech gaze/eyelid/brow ownership stays unchanged.
+        const mix=neural.blend;
+        for(let i=0;i<VISEMES.length;i++){
+          const idx=face.morphTargetDictionary[VISEMES[i]];
+          if(idx!==undefined)assign(VISEMES[i],face.morphTargetInfluences[idx]*(1-mix));
+        }
+        for(let i=0;i<FACE_CHANNELS.length;i++){
+          const n=FACE_CHANNELS[i],idx=face.morphTargetDictionary[n];
+          if(idx===undefined)continue;
+          const base=n==='jawOpen'?smoothJaw:n==='mouthClose'?(timed?speechPose.close:0):n.startsWith('mouthPress')?(timed?speechPose.press:0):n==='mouthSmileLeft'?smile:n==='mouthSmileRight'?smile*.88:n.startsWith('cheekSquint')?squint*.7:0;
+          let target=neural.pose[i]*(n==='jawOpen'?.35:n==='mouthClose'?.35:.60);
+          if(n==='jawOpen')target*=1-.65*neural.pose[4];
+          assign(n,base*(1-mix)+target*mix);
+        }
+        canvas.dataset.speechMotion=neural.active?'nvidia-a2f-local':timed?'pcm-viseme-experimental':liveFormants?'audio-formant-fallback':hasExternalLevel||state.phonemes?'explicit-input':'no-audio-analysis';
+      }else{
+        assign('viseme_aa',smoothAA);
+        assign('viseme_O',smoothO);
+        assign('viseme_E',smoothE);
+        assign('viseme_U',smoothU);
+        assign('mouthSmileLeft',smile);assign('mouthSmileRight',smile);
+        assign('browInnerUp',still?0:.05+.15*energy*(.5+.5*Math.sin(t*1.25))+smoothJaw*.15+(isDecision?.14:0));
+        assign('browOuterUpLeft',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
+        assign('browOuterUpRight',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
+        assign('noseSneerLeft',smoothJaw*.12);assign('noseSneerRight',smoothJaw*.12);
+      }
       assign('eyeLookInLeft',Math.max(0,gazeX));assign('eyeLookOutLeft',Math.max(0,-gazeX));
       assign('eyeLookOutRight',Math.max(0,gazeX));assign('eyeLookInRight',Math.max(0,-gazeX));
       assign('eyeLookUpLeft',Math.max(0,gazeY));assign('eyeLookDownLeft',Math.max(0,-gazeY));
       assign('eyeLookUpRight',Math.max(0,gazeY));assign('eyeLookDownRight',Math.max(0,-gazeY));
 
+      const bodyPose=bodyRig?.update(dt,still,humanPose);
+      if(bodyPose){
+        const wide=bodyPose.wide,offset=bodyPose.rootZ;
+        camera.position.set(camX*(1-wide),1.570+camY+(0.89-1.570-camY)*wide,1.05+(4.0/Math.min(1,camera.aspect)-1.05)*wide);
+        camera.lookAt(0,1.540+(.87-1.540)*wide,.03+.18*wide);
+        canvas.dataset.bodyAction=bodyPose.action||'idle';
+        canvas.dataset.bodyTravel=offset.toFixed(3);
+        canvas.dataset.bodyFrame=wide.toFixed(3);
+      }
+      if(secondaryRig){
+        const secondary=secondaryRig.update({yaw,pitch,z:bodyPose?.rootZ||0,flex:Math.max(bodyPose?.gesture||0,Math.abs(bodyPose?.swing||0)*3),wide:bodyPose?.wide||0,quality:qualityTier,leftLift:bodyPose?.leftLift||0,rightLift:bodyPose?.rightLift||0},rawDt/1000,still);
+        canvas.dataset.hairSway=[secondary.front,secondary.back,secondary.side].map(x=>x.toFixed(3)).join(',');
+        canvas.dataset.hairMorphMeshes=String(secondary.hairMeshes);
+        canvas.dataset.textileResponseMaterials=String(secondary.textileMaterials);
+        canvas.dataset.groundContact=String(secondary.ground);
+        canvas.dataset.floorReflection=secondary.reflection?'planar':'adaptive-fallback';
+      }
       model.updateMatrixWorld(true);
 
       let cursor=0;
@@ -1296,13 +1423,22 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       }
       geometry.attributes.position.needsUpdate=true;geometry.attributes.aNormal.needsUpdate=true;
       material.uniforms.uTime.value=t;material.uniforms.uEnergy.value=energy;
-      lightBody.update(t,energy,blink,finiteClamp(smoothJaw*2.0,0,1,0),qualityTier,decisionBlend,pupilSize);
+      lightBody.update(t,energy,blink,finiteClamp(smoothJaw*2.0,0,1,0),qualityTier,decisionBlend,pupilSize,dt,still);
 
       let signature=0;for(let j=0;j<Math.min(positions.length,6000);j+=31)signature+=positions[j]*(j+1);
-      canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer='rigged-particle-field';
-      canvas.dataset.hairPoints=String(groups.find(g=>g.kind===2).samples.length);
-      canvas.dataset.torsoPoints=String(groups.find(g=>g.kind===1).samples.length);
+      canvas.dataset.renderedPoints=String(total);canvas.dataset.renderer=anatomical?'rigged-anatomical-v31':'rigged-particle-field';
+      canvas.dataset.avatarVersion=anatomical?'V31':'lightform';
+      canvas.dataset.hairPoints=String(groups.find(g=>g.kind===2)?.samples.length??0);
+      canvas.dataset.torsoPoints=String(groups.find(g=>g.kind===1)?.samples.length??0);
       canvas.dataset.yaw=yaw.toFixed(4);canvas.dataset.blink=blink.toFixed(4);canvas.dataset.jaw=smoothJaw.toFixed(4);
+      if(anatomical){
+        // Measure the deformed geometry rather than synthesizing a motion receipt from state.
+        signature=0;
+        for(let p=0;p<probes.length;p++){
+          face.getVertexPosition(probes[p].vertex,temp).applyMatrix4(face.matrixWorld);
+          signature+=(temp.x*3+temp.y*5+temp.z*7)*(p+1);
+        }
+      }
       canvas.dataset.geometrySignature=signature.toFixed(5);
       canvas.dataset.blinkMm=displacement(probes[0]).toFixed(3);
       canvas.dataset.jawMm=displacement(probes[1]).toFixed(3);
@@ -1338,7 +1474,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       window.removeEventListener('jaco:cognitive-phase',onMissionEvent);
       motion.removeEventListener('change',refresh);document.removeEventListener('visibilitychange',refresh);
       canvas.removeEventListener('webglcontextlost',lost);signal?.removeEventListener('abort',dispose);
-      voiceTracker?.dispose();lightBody?.dispose();geometry.dispose();material.dispose();renderer.dispose();disposeModel(model);
+      voiceTracker?.dispose();secondaryRig?.dispose();lightBody?.dispose();geometry.dispose();material.dispose();renderer.dispose();disposeModel(model);
     }
     cleanup=dispose;
     window.addEventListener('pointermove',onPointerMove,{passive:true});
@@ -1362,11 +1498,12 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         state={...state,...next};
         if(motion.matches)render(0);
       },
+      requestMotion(action){if(disposed||document.hidden||motion.matches||!bodyRig?.request(action))return false;human?.cue(action);return true;},
       attachAudio(audioSource){return voiceTracker.attach(audioSource);},
       dispose
     };
   }catch(error){
-    if(!disposed){cleanup();if(!disposed){disposed=true;voiceTracker?.dispose();lightBody?.dispose();geometry?.dispose();material?.dispose();renderer?.dispose();disposeModel(model);}}
+    if(!disposed){cleanup();if(!disposed){disposed=true;voiceTracker?.dispose();secondaryRig?.dispose();lightBody?.dispose();geometry?.dispose();material?.dispose();renderer?.dispose();disposeModel(model);}}
     throw error;
   }
 }
