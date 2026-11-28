@@ -11,6 +11,11 @@ on:
       - 'assets/aura-v31/**'
       - 'runtime/src/lib/auraRigLightform.mjs'
       - 'runtime/src/lib/auraSpeech*.mjs'
+      - 'runtime/src/lib/auraBody*.mjs'
+      - 'runtime/src/lib/workspaceActions*.mjs'
+      - 'runtime/operator-stage/**'
+      - 'runtime/scripts/build-operator-stage.mjs'
+      - 'tests/nova/operator-stage-assets.test.mjs'
       - 'runtime/src/lib/vendor/headaudio/**'
       - 'runtime/src/components/AuraPortrait.tsx'
       - 'runtime/public/branding/aura-anatomical.glb'
@@ -46,7 +51,8 @@ jobs:
           node --check runtime/src/lib/auraRigLightform.mjs
           node --check runtime/src/lib/auraSpeechWorker.mjs
           node --check runtime/src/lib/auraSpeechAnalysis.mjs
-          node --test runtime/src/lib/auraSpeechTimeline.test.mjs
+          node --check runtime/src/lib/auraBodyRig.mjs
+          node --test runtime/src/lib/auraSpeechTimeline.test.mjs runtime/src/lib/auraBodyMotion.test.mjs runtime/src/lib/workspaceActions.test.mjs tests/nova/operator-stage-assets.test.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: aura-verified-rig

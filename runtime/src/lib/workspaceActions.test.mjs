@@ -29,3 +29,8 @@ test('existing workspace directives are unchanged', () => {
   assert.deepEqual(actions, [{ type: 'open', view: 'evidence' }, { type: 'terminal' }, { type: 'file', path: 'src/App.tsx' }]);
   assert.equal(workspaceReplyText('[[jaco:focus tools]]'), 'Showing it in the workspace.');
 });
+
+test('motion directives are a closed presentation-only contract with one motion per reply',()=>{
+  const a=extractWorkspaceActions('Show it.\n[[jaco:focus browser]]\n[[jaco:motion advance]]\n[[jaco:motion return]]\n[[jaco:motion shell]]');
+  assert.deepEqual(a.actions,[{type:'focus',panel:'browser'},{type:'motion',motion:'advance'}]);assert.equal(a.text,'Show it.');
+});

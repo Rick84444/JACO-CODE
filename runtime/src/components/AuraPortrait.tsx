@@ -47,6 +47,8 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
   const [speaking, setSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState(false);
   const [maskError, setMaskError] = useState(false);
+  const [bodyMotionReady,setBodyMotionReady]=useState(false);
+  const [motionFeedback,setMotionFeedback]=useState('');
   // Conversation mode: listen, send after a pause, hear the reply, listen again.
   const [conversation, setConversation] = useState(savedConversation);
   const [awaiting, setAwaiting] = useState(false);
@@ -344,6 +346,7 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     ).then(instance=>{
       if(controller.signal.aborted){instance.dispose();return;}
       rig.current=instance;instance.setState(rigState.current);
+      setBodyMotionReady(element.dataset.avatarVersion==='V31');
     }).catch(()=>{if(!controller.signal.aborted)setMaskError(true);});
     return()=>{controller.abort();rig.current?.dispose();rig.current=null;};
   },[]);
@@ -365,6 +368,10 @@ export default function AuraPortrait({ tone, label, chat, onClose }: {
     </div>
     {maskError && <p role="status">{tr('Den tredimensionella gestalten kunde inte laddas. Chatten är fortfarande tillgänglig.', 'The 3D lightform could not load. Chat remains available.')}</p>}
     <p data-tone={tone}>{label}</p>
+    {bodyMotionReady&&<div className="aura-portrait-controls" aria-label={tr('Auras rörelser','Aura motion')}>
+      {([['explain','Visa','Present'],['advance','Gå framåt','Step forward'],['return','Tillbaka','Return']] as const).map(([action,sv,en])=><button type="button" key={action} onClick={()=>setMotionFeedback(rig.current?.requestMotion(action)?'':tr('Rörelsen är inte tillgänglig just nu.','Motion is unavailable right now.'))}>{tr(sv,en)}</button>)}
+      {motionFeedback&&<span role="status">{motionFeedback}</span>}
+    </div>}
     {chat && <div className="aura-portrait-conversation">
       {latestReply && <div className="aura-portrait-reply" aria-live="polite">{workspaceReplyText(latestReply.content)}</div>}
       <textarea value={chat.input} onChange={event => { const text = event.currentTarget.value; chat.setInput(() => text); }}
