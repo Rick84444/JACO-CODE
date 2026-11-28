@@ -14,7 +14,7 @@ export function createNeuralFaceHost(env=process.env){
   }
   return {available,async analyze(base64,signal){
     if(busy||signal?.aborted||!await available()||busy)return null;
-    if(typeof base64!=='string'||base64.length>Math.ceil(MAX_SAMPLES*4/3)*4+4||!(/^[A-Za-z0-9+/]+={0,2}$/).test(base64))return null;
+    if(typeof base64!=='string'||base64.length%4!==0||base64.length>Math.ceil(MAX_SAMPLES*4/3)*4+4||!(/^[A-Za-z0-9+/]+={0,2}$/).test(base64))return null;
     const pcm=Buffer.from(base64,'base64');
     if(pcm.length%4||pcm.length<320||pcm.length>MAX_SAMPLES*4)return null;
     for(let i=0;i<pcm.length;i+=4){const x=pcm.readFloatLE(i);if(!Number.isFinite(x)||Math.abs(x)>1.01)return null;}
@@ -32,7 +32,7 @@ export function createNeuralFaceHost(env=process.env){
         signal?.addEventListener('abort',cancel,{once:true});
         child.stdout.on('data',data=>{length+=data.length;if(length>MAX_OUTPUT){child.kill();finish(Error('A2F_OUTPUT_LIMIT'));}else chunks.push(data);});
         child.on('error',finish);
-        child.on('close',code=>{try{if(code!==0)throw Error('A2F_FAILED');finish(null,JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch(error){finish(error);}});
+        child.on('close',code=>{try{if(code!==0)throw Error('A2F_FAILED');const lines=Buffer.concat(chunks).toString('utf8').split(/\r?\n/).filter(s=>s.startsWith('JACO_A2F_JSON:'));if(lines.length!==1)throw Error('A2F_PROTOCOL');finish(null,JSON.parse(lines[0].slice(14)));}catch(error){finish(error);}});
       });
       return parseNeuralTimeline(raw,pcm.length/64000)?raw:null;
     }catch{if(!signal?.aborted)backoff=Date.now()+30000;return null;}

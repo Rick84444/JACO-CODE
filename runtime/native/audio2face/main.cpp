@@ -39,7 +39,7 @@ int main(int argc,char** argv){
    nva2f::ReadRegressionBlendshapeSolveExecutorBundle(1,argv[1],Opt::Skin,false,60,1,nullptr,nullptr));
   if(!bundle)throw std::runtime_error("bundle unavailable");
   auto& exec=bundle->GetExecutor();out.rate=exec.GetSamplingRate();out.count=exec.GetWeightCount();
-  if(out.rate!=16000||out.count<8||out.count>128)throw std::runtime_error("unsupported model output");
+  if(exec.GetResultType()!=nva2f::IBlendshapeExecutor::ResultsType::HOST||out.rate!=16000||out.count<8||out.count>128)throw std::runtime_error("unsupported model output");
   nva2f::IBlendshapeSolver* solver=nullptr;check(nva2f::GetExecutorSkinSolver(exec,0,&solver));
   if(!solver||static_cast<size_t>(solver->NumBlendshapePoses())!=out.count)throw std::runtime_error("pose names unavailable");
   std::vector<std::string> names;
@@ -51,10 +51,10 @@ int main(int argc,char** argv){
   while(nva2x::GetNbReadyTracks(exec)>0)check(exec.Execute(nullptr));
   check(exec.Wait(0));if(out.failed||out.frames.empty())throw std::runtime_error("no frames");
   std::sort(out.frames.begin(),out.frames.end(),[](const Frame& a,const Frame& b){return a.time<b.time;});
-  std::cout.imbue(std::locale::classic());std::cout<<"{\"protocol\":\"jaco-a2f/1\",\"names\":[";
+  std::cout.imbue(std::locale::classic());std::cout<<"\nJACO_A2F_JSON:{\"protocol\":\"jaco-a2f/1\",\"names\":[";
   for(size_t i=0;i<names.size();i++){if(i)std::cout<<',';std::cout<<'"'<<names[i]<<'"';}
   std::cout<<"],\"frames\":[";
   for(size_t i=0;i<out.frames.size();i++){if(i)std::cout<<',';std::cout<<'['<<out.frames[i].time;for(float x:out.frames[i].weights){if(!std::isfinite(x))return 3;std::cout<<','<<x;}std::cout<<']';}
-  std::cout<<"]}";return 0;
+  std::cout<<"]}\n";return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }
