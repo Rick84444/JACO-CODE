@@ -12,8 +12,11 @@ export function sampleWalk(seconds,from=0,to=WALK_DISTANCE){
   const left=mix(old[0],next[0],f)/WALK_DISTANCE,right=mix(old[1],next[1],f)/WALK_DISTANCE;
   const height=Math.sin(Math.PI*f)*.065;
   const l=from+(to-from)*left,r=from+(to-from)*right;
+  // Shift toward the supporting leg before lifting the opposite foot.
+  const shift=u>=4?0:(i%2===0?-1:1)*.035*Math.sin(Math.PI*clamp(u-i));
+  const preparation=seconds<INTRO?-.022*Math.sin(Math.PI*clamp(seconds/INTRO)):0;
   return {rootZ:(l+r)*.5,leftZ:l,rightZ:r,leftLift:next[0]!==old[0]?height:0,rightLift:next[1]!==old[1]?height:0,
-    hipDrop:.045*Math.sin(Math.PI*clamp(u/4)),swing:Math.sin(Math.PI*u)*.12,wide:ease(seconds/INTRO),done:u>=4};
+    hipDrop:.045*Math.sin(Math.PI*clamp(u/4)),weightX:shift+preparation,swing:Math.sin(Math.PI*u)*.12,wide:ease(seconds/INTRO),done:u>=4};
 }
 export function samplePresentation(seconds){
   return ease(seconds/.7)*(1-ease((seconds-2.25)/.8));
@@ -31,7 +34,7 @@ export function createBodyMotion(){
     update(dt,reduced=false){
       if(reduced){this.reset();}
       elapsed+=Number.isFinite(dt)?clamp(dt,0,.1):0;
-      let pose={action,rootZ:position,leftZ:position,rightZ:position,leftLift:0,rightLift:0,hipDrop:0,swing:0,gesture:0,side:0,wide};
+      let pose={action,rootZ:position,leftZ:position,rightZ:position,leftLift:0,rightLift:0,hipDrop:0,weightX:0,swing:0,gesture:0,side:0,wide};
       if(action==='advance'||action==='return'){
         const target=action==='advance'?WALK_DISTANCE:0;
         const walk=sampleWalk(elapsed,position,target);

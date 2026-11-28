@@ -41,24 +41,30 @@ export function createAuraBodyRig(model,bones){
     orient(chain.a,chain.b,mid);orient(chain.b,chain.c,end);
     if(lockEnd){chain.c.parent.getWorldQuaternion(parent).invert();chain.c.quaternion.copy(parent.multiply(chain.rotation));chain.c.updateMatrixWorld(true);}
   }
+  const hipWorld=new THREE.Vector3();
   let wasActive=false;
   return {
     request:kind=>motion.request(kind),
-    update(dt,reduced){
+    update(dt,reduced,behavior=null){
       const p=motion.update(dt,reduced);
-      const active=Boolean(p.action||p.wide>0||p.rootZ);
+      const idleWeight=reduced?0:behavior?.weight||0;
+      const beat=reduced||p.action?0:behavior?.handBeat||0;
+      const active=Boolean(p.action||p.wide>0||p.rootZ||Math.abs(idleWeight)>.001||beat>.001);
       if(!active&&!wasActive)return p;
       wasActive=active;
       // The base pose is restored every frame; no accumulated quaternion drift.
       for(const n of NAMES)bone(n).quaternion.copy(bones.get(n).base);
       model.position.copy(root);model.position.z+=p.rootZ;
-      hip.position.copy(hipBase);hip.position.y-=p.hipDrop;
+      hip.position.copy(hipBase);
       model.updateMatrixWorld(true);
+      // Hip offsets are metres in stage coordinates, not arbitrary local bone axes.
+      hip.getWorldPosition(hipWorld);hipWorld.x+=p.weightX+(p.action?0:idleWeight);hipWorld.y-=p.hipDrop;
+      hip.position.copy(hip.parent.worldToLocal(hipWorld));hip.updateMatrixWorld(true);
       for(const side of ['Left','Right']){
         const left=side==='Left',sign=left?1:-1,leg=chains[side+'leg'],arm=chains[side+'arm'];
         target.copy(leg.rest);target.z+=left?p.leftZ:p.rightZ;target.y+=left?p.leftLift:p.rightLift;
         solve(leg,target,0,0,1,true);
-        const strength=p.gesture*(p.side===0?.60:p.side===sign?1:0);
+        const strength=p.gesture*(p.side===0?.60:p.side===sign?1:0)+(left?beat*.20:beat*.35);
         target.copy(arm.rest);target.z+=p.rootZ+sign*p.swing;
         // An open-hand presentation remains within the measured arm reach.
         target.x+=sign*.10*strength;target.y+=.20*strength;target.z+=.13*strength;
