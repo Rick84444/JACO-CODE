@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <locale>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -25,18 +26,19 @@ void collect(void* user,const nva2f::IBlendshapeExecutor::HostResults& r,std::er
 int main(int argc,char** argv){
  try{
   if(argc!=4)return 2;
-  std::ifstream in(argv[3],std::ios::binary|std::ios::ate);auto bytes=in.tellg();
+  std::ifstream in(argv[3],std::ios::binary|std::ios::ate);std::streamoff bytes=in.tellg();
   if(!in||bytes<320||bytes>1280000||bytes%4!=0)return 2;
   std::vector<float> pcm(static_cast<size_t>(bytes)/4);in.seekg(0);in.read(reinterpret_cast<char*>(pcm.data()),bytes);
   if(!in||!std::all_of(pcm.begin(),pcm.end(),[](float x){return std::isfinite(x)&&std::abs(x)<=1.01f;}))return 2;
   check(nva2x::SetCudaDeviceIfNeeded(0));
   using Opt=nva2f::IGeometryExecutor::ExecutionOption;
   const std::string kind=argv[2];
+  Output out;
   Ptr<nva2f::IBlendshapeExecutorBundle> bundle(kind=="diffusion"?
    nva2f::ReadDiffusionBlendshapeSolveExecutorBundle(1,argv[1],Opt::Skin,false,0,true,nullptr,nullptr):
    nva2f::ReadRegressionBlendshapeSolveExecutorBundle(1,argv[1],Opt::Skin,false,60,1,nullptr,nullptr));
   if(!bundle)throw std::runtime_error("bundle unavailable");
-  auto& exec=bundle->GetExecutor();Output out;out.rate=exec.GetSamplingRate();out.count=exec.GetWeightCount();
+  auto& exec=bundle->GetExecutor();out.rate=exec.GetSamplingRate();out.count=exec.GetWeightCount();
   if(out.rate!=16000||out.count<8||out.count>128)throw std::runtime_error("unsupported model output");
   nva2f::IBlendshapeSolver* solver=nullptr;check(nva2f::GetExecutorSkinSolver(exec,0,&solver));
   if(!solver||static_cast<size_t>(solver->NumBlendshapePoses())!=out.count)throw std::runtime_error("pose names unavailable");

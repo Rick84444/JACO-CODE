@@ -1,3 +1,4 @@
+import {FACE_CHANNELS,createNeuralMixer} from './auraNeuralFace.mjs';
 import {createSecondaryRig} from './auraSecondaryRig.mjs';
 import {createV31OpticalRig} from './auraV31OpticalRig.mjs';
 import {createHumanBehavior} from './auraHumanBehavior.mjs';
@@ -1134,6 +1135,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
 
     let energy=0,gazeX=0,gazeY=0,smoothJaw=0;
     const speechPose=emptySpeechPose(),speechTarget=emptySpeechPose(),naturalBlink=createNaturalBlink();
+    const neuralMixer=createNeuralMixer();let neuralPlayback=null;
     let speechAccent=0,previousSpeechLevel=0;
     let listeningSince=0, previousYaw=0;
     let smoothAA=0,smoothO=0,smoothE=0,smoothU=0,decisionBlend=0,pupilSize=0.31;
@@ -1221,7 +1223,10 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const hasExternalLevel=typeof state.audioLevel==='number'&&Number.isFinite(state.audioLevel);
       const playback=anatomical?state.speechPlayback:null;
       const timed=Boolean(playback&&validSpeechTimeline(playback.timeline)&&playback.audio);
-      const playing=Boolean(timed&&state.speaking&&!playback.audio.paused&&!playback.audio.ended&&!still);
+      const mediaPlaying=Boolean(playback?.audio&&state.speaking&&!playback.audio.paused&&!playback.audio.ended&&!still);
+      const playing=timed&&mediaPlaying;
+      if(neuralPlayback!==playback){neuralMixer.update(null,NaN,dt,false);neuralPlayback=playback;}
+      const neural=neuralMixer.update(playback?.timeline?.neural,mediaPlaying?playback.audio.currentTime:NaN,dt,mediaPlaying);
       if(timed){sampleSpeechPose(playback.timeline,playing?playback.audio.currentTime:NaN,speechTarget);}
       else sampleSpeechPose(null,NaN,speechTarget);
       if(still){sampleSpeechPose(null,NaN,speechPose);}else approachSpeechPose(speechPose,speechTarget,dt);
@@ -1331,7 +1336,22 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         canvas.dataset.humanBehavior=humanPose?.mode||'idle';
         canvas.dataset.speechAccent=(humanPose?.accent||0).toFixed(3);
         assign('noseSneerLeft',0);assign('noseSneerRight',0);
-        canvas.dataset.speechMotion=timed?'pcm-viseme-experimental':liveFormants?'audio-formant-fallback':hasExternalLevel||state.phonemes?'explicit-input':'no-audio-analysis';
+        // One owner for speech channels: crossfade the local viseme pose into the
+        // named SDK pose. Non-speech gaze/eyelid/brow ownership stays unchanged.
+        const mix=neural.blend;
+        for(let i=0;i<VISEMES.length;i++){
+          const idx=face.morphTargetDictionary[VISEMES[i]];
+          if(idx!==undefined)assign(VISEMES[i],face.morphTargetInfluences[idx]*(1-mix));
+        }
+        for(let i=0;i<FACE_CHANNELS.length;i++){
+          const n=FACE_CHANNELS[i],idx=face.morphTargetDictionary[n];
+          if(idx===undefined)continue;
+          const base=n==='jawOpen'?smoothJaw:n==='mouthClose'?(timed?speechPose.close:0):n.startsWith('mouthPress')?(timed?speechPose.press:0):n==='mouthSmileLeft'?smile:n==='mouthSmileRight'?smile*.88:n.startsWith('cheekSquint')?squint*.7:0;
+          let target=neural.pose[i]*(n==='jawOpen'?.35:n==='mouthClose'?.35:.60);
+          if(n==='jawOpen')target*=1-.65*neural.pose[4];
+          assign(n,base*(1-mix)+target*mix);
+        }
+        canvas.dataset.speechMotion=neural.active?'nvidia-a2f-local':timed?'pcm-viseme-experimental':liveFormants?'audio-formant-fallback':hasExternalLevel||state.phonemes?'explicit-input':'no-audio-analysis';
       }else{
         assign('viseme_aa',smoothAA);
         assign('viseme_O',smoothO);

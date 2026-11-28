@@ -14,6 +14,8 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=
 export const AURA_STAGE_FILES=Object.freeze({
   "vendor/auraSpeechTimeline.mjs": "src/lib/auraSpeechTimeline.mjs",
   "vendor/auraSpeechAnalysis.mjs": "src/lib/auraSpeechAnalysis.mjs",
+  "vendor/auraNeuralFace.mjs": "src/lib/auraNeuralFace.mjs",
+  "vendor/auraNeuralFaceClient.mjs": "src/lib/auraNeuralFaceClient.mjs",
   "vendor/auraSpeechWorker.mjs": "src/lib/auraSpeechWorker.mjs",
   "vendor/auraSpeechClassifier.mjs": "src/lib/auraSpeechClassifier.mjs",
   "vendor/auraBodyMotion.mjs": "src/lib/auraBodyMotion.mjs",

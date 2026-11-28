@@ -1,3 +1,4 @@
+import { createNeuralFaceHost } from './src/server/auraNeuralFaceHost.mjs';
 import { readAuraServiceHealth } from '../agents/lib/aura-service-health.mjs';
 import { readAuraDesktopLiveFrame } from '../agents/lib/aura-desktop-live-view.mjs';
 import { missionScreenshotPath } from '../agents/lib/mission-screen-frame.mjs';
@@ -1055,6 +1056,19 @@ function requireLocalUi(req: express.Request, res: express.Response, next: expre
   // (sv-SE-SofieNeural through the voiceChannel edge engine). The operator chose it knowing the spoken text is sent
   // to Microsoft. Local Piper Alma (2026-11-19, CC-BY-4.0) stays as the fallback, so she still speaks offline.
   // JACO_AURA_VOICE=piper puts the local voice first again.
+  const neuralFaceHost=createNeuralFaceHost();
+  app.get('/api/aura/face/health',requireLocalUiSameOrigin,async (_req,res)=>{
+    res.set('Cache-Control','no-store').json({available:await neuralFaceHost.available(),engine:'audio2face-local'});
+  });
+  app.post('/api/aura/face/analyze',requireLocalUiSameOrigin,async (req,res)=>{
+    const controller=new AbortController();
+    const close=()=>controller.abort();
+    res.once('close',close);
+    try{
+      const data=await neuralFaceHost.analyze(req.body?.pcm,controller.signal);
+      if(!res.destroyed&&!res.writableEnded){if(data)res.json(data);else res.status(503).json({error:'A2F_UNAVAILABLE',fallback:'headaudio'});}
+    }finally{res.off('close',close);}
+  });
   app.post('/api/aura/voice/speak', requireLocalUiSameOrigin, async (req, res) => {
     const text = typeof req.body?.text === 'string' ? req.body.text : '';
     if (!text.trim() || text.length > 6000) return res.status(400).json({ success: false, error: 'VOICE_TEXT_INVALID' });

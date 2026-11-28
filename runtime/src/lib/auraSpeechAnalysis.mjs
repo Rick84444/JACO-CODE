@@ -1,3 +1,4 @@
+import {analyzeNeuralFace} from './auraNeuralFaceClient.mjs';
 import {validSpeechTimeline} from './auraSpeechTimeline.mjs';
 // Analysis is separate from the actual output audio graph. It cannot silence playback.
 // Browser audio decoding resamples to 16 kHz; the worker never receives microphone data.
@@ -12,7 +13,10 @@ export async function analyzeAuraSpeech(blob,signal){
       const channel=decoded.getChannelData(c);
       for(let i=0;i<samples.length;i++)samples[i]+=channel[i]/decoded.numberOfChannels;
     }
-    return await new Promise(resolve=>{
+    const holder={neural:null};
+    // Run independently; never hold audio or the local classifier waiting for the GPU.
+    void analyzeNeuralFace(samples.slice(),signal).then(t=>{if(t&&!signal?.aborted)holder.neural=t;});
+    const head=await new Promise(resolve=>{
       let worker,timer,settled=false;
       const done=value=>{if(settled)return;settled=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);worker?.terminate();resolve(value);};
       const abort=()=>done(null);
@@ -26,5 +30,8 @@ export async function analyzeAuraSpeech(blob,signal){
         worker.postMessage({samples,sampleRate:16000},[samples.buffer]);
       }catch{done(null);}
     });
+    if(signal?.aborted)return null;
+    if(head)Object.assign(holder,head);
+    return holder;
   }catch{return null;}
 }
