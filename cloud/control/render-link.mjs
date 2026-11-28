@@ -20,9 +20,30 @@ export function createRenderLink(pool,key){
       let current=attachment;
       ws.deserializeAttachment=()=>current;
       ws.serializeAttachment=next=>{current=next;};
-      if(attachment.role==='host')for(const prior of sockets){const a=prior.deserializeAttachment?.();if(a?.role==='host'&&a.deviceId===attachment.deviceId)prior.close(4001,'Host replaced');}
-      sockets.add(ws);
-      ws.on('message',(data,binary)=>{if(binary){ws.close(1003,'Text required');return;}serial(id,()=>handler.webSocketMessage(ws,data.toString('utf8'))).catch(()=>ws.close(1011,'Link error'));});
+      // The HTTP upgrade was authorized earlier. A device may have been
+      // revoked before this socket was actually accepted. Serialize one final
+      // durable revocation check with all account operations before admitting
+      // a host or processing its messages. Database errors fail closed.
+      if(attachment.role==='host'){
+        serial(id,async()=>{
+          if(await storage(id).get('revoked:'+attachment.deviceId)){
+            ws.close(4003,'Device revoked');
+            return;
+          }
+          if(ws.readyState!==1)return;
+          for(const prior of sockets){
+            const a=prior.deserializeAttachment?.();
+            if(a?.role==='host'&&a.deviceId===attachment.deviceId)prior.close(4001,'Host replaced');
+          }
+          sockets.add(ws);
+        }).catch(()=>ws.close(1011,'Host admission failed'));
+      }else sockets.add(ws);
+      ws.on('message',(data,binary)=>{if(binary){ws.close(1003,'Text required');return;}
+        serial(id,()=>{
+          if(!sockets.has(ws)){ws.close(4003,'Host not admitted');return;}
+          return handler.webSocketMessage(ws,data.toString('utf8'));
+        }).catch(()=>ws.close(1011,'Link error'));
+      });
       ws.on('close',()=>{sockets.delete(ws);serial(id,()=>handler.webSocketClose(ws)).catch(()=>{});});
       ws.on('error',()=>{sockets.delete(ws);serial(id,()=>handler.webSocketError(ws)).catch(()=>{});});
     }};
