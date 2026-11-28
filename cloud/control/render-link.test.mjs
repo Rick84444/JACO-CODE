@@ -110,3 +110,44 @@ test('database failure during final host admission fails closed',async()=>{
     assert.equal(accepted.room.sockets.has(socket),false);
   }finally{link.close();}
 });
+
+test('revoked socket with delayed close event cannot dispatch a queued message',async()=>{
+  const pool=fakePool();
+  const link=createRenderLink(pool,Buffer.alloc(32,14));
+  class ClosingSocket extends TestSocket {
+    close(code,reason){
+      if(this.readyState!==1)return;
+      this.readyState=2;this.closeCode=code;this.closeReason=reason;
+      // Real WebSockets do not emit close until the handshake completes.
+    }
+  }
+  try{
+    const room=link.LINK_ROOMS.get(ACCOUNT);
+    const accepted=await upgrade(room),socket=new ClosingSocket();
+    accepted.room.accept(socket,accepted.attachment);
+    await settle(()=>accepted.room.sockets.has(socket));
+    let dispatched=0;
+    accepted.room.handler.webSocketMessage=async()=>{dispatched++;};
+    const revoked=room.fetch(new Request('https://internal/revoke',{
+      method:'POST',body:JSON.stringify({deviceId:DEVICE}),
+    }));
+    socket.emit('message',Buffer.from('{}'),false);
+    assert.equal((await revoked).status,200);
+    await room.fetch('https://internal/hosts'); // drain account queue
+    assert.equal(socket.readyState,2);
+    assert.equal(socket.closeCode,4003);
+    assert.equal(accepted.room.sockets.has(socket),true);
+    assert.equal(dispatched,0);
+    socket.readyState=3;socket.emit('close');
+  }finally{link.close();}
+});
+test('host credential expiring between authorization and admission is rejected',async()=>{
+  const pool=fakePool(),link=createRenderLink(pool,Buffer.alloc(32,15));
+  try{
+    const accepted=await upgrade(link.LINK_ROOMS.get(ACCOUNT)),socket=new TestSocket();
+    accepted.room.accept(socket,{...accepted.attachment,expiresAt:Date.now()-1});
+    await settle(()=>socket.closeCode!==null);
+    assert.equal(socket.closeCode,4003);
+    assert.equal(accepted.room.sockets.has(socket),false);
+  }finally{link.close();}
+});
