@@ -8,7 +8,7 @@ export function createHumanBehavior(seed=0xa031){
   let s=seed>>>0;
   const random=()=>{s=(Math.imul(s,1664525)+1013904223)>>>0;return s/4294967296;};
   let time=0,mode='idle',age=0,attentionX=0,attentionY=0,nextGlance=3.5,glanceUntil=0,glanceX=0,glanceY=0;
-  let cue=null,priorLevel=0,accent=0,nextAccent=0,accentAt=-10,breathPhase=0,headX=0,headY=0,oldHeadX=0,oldHeadY=0,hairX=0,hairY=0,weight=0,nextWeight=4,weightTarget=0;
+  let cue=null,priorLevel=0,accent=0,accentPeak=0,nextAccent=0,accentAt=-10,breathPhase=0,headX=0,headY=0,oldHeadX=0,oldHeadY=0,hairX=0,hairY=0,weight=0,nextWeight=4,weightTarget=0;
   const out={mode:'idle',headYaw:0,headPitch:0,headRoll:0,eyeX:0,eyeY:0,brow:0,smile:0,cheek:0,breath:0,handBeat:0,weight:0,hairYaw:0,hairPitch:0,accent:0};
   function neutral(){for(const key of Object.keys(out))if(key!=='mode')out[key]=0;out.mode='idle';return out;}
   return {
@@ -18,7 +18,7 @@ export function createHumanBehavior(seed=0xa031){
     },
     update(input={},delta=.033,reduced=false){
       const dt=clamp(delta,0,.1);
-      if(reduced){cue=null;mode='idle';age=0;accent=0;accentAt=-10;priorLevel=0;headX=headY=oldHeadX=oldHeadY=attentionX=attentionY=hairX=hairY=weight=0;weightTarget=0;glanceUntil=0;nextGlance=time+3;nextWeight=time+4;return neutral();}
+      if(reduced){cue=null;mode='idle';age=0;accent=accentPeak=0;accentAt=-10;priorLevel=0;headX=headY=oldHeadX=oldHeadY=attentionX=attentionY=hairX=hairY=weight=0;weightTarget=0;glanceUntil=0;nextGlance=time+3;nextWeight=time+4;return neutral();}
       time+=dt;
       // Listening interrupts a presentation's attention, speaking wins over work telemetry.
       const next=input.listening?'listening':input.speaking?'speaking':input.phase==='awaiting_decision'?'decision':input.phase==='verifying'?'verifying':input.active||input.phase==='analyzing'?'thinking':'idle';
@@ -29,8 +29,8 @@ export function createHumanBehavior(seed=0xa031){
       const rise=Math.max(0,level-priorLevel);
       priorLevel=level;
       accent*=Math.exp(-dt/.19);
-      if(mode==='speaking'&&rise>.085&&time>=nextAccent){accent=Math.min(1,rise*2.7);accentAt=time;nextAccent=time+.62+random()*.35;}
-      if(mode!=='speaking'){accent=0;accentAt=-10;}
+      if(mode==='speaking'&&rise>.085&&time>=nextAccent){accent=accentPeak=Math.min(1,rise*2.7);accentAt=time;nextAccent=time+.62+random()*.35;}
+      if(mode!=='speaking'){accent=accentPeak=0;accentAt=-10;}
       const explicitX=clamp(input.x,-1,1),explicitY=clamp(input.y,-1,1);
       const hasTarget=Math.abs(explicitX)+Math.abs(explicitY)>.035;
       if(time>=nextGlance){
@@ -62,7 +62,7 @@ export function createHumanBehavior(seed=0xa031){
       out.brow=clamp((mode==='decision'?.075:mode==='listening'?.035:0)+accent*.065,0,.15);
       out.smile=mode==='listening'?.05:mode==='speaking'?.018+accent*.018:.028;
       out.cheek=clamp(out.smile*.4+accent*.027,0,.085);
-      out.breath=breath;out.handBeat=mode==='speaking'?pulse(time,accentAt+.07,.65)*accent:0;
+      out.breath=breath;out.handBeat=mode==='speaking'?pulse(time,accentAt+.07,.65)*accentPeak:0;
       out.weight=weight;out.hairYaw=hairX;out.hairPitch=hairY;out.accent=accent;
       return out;
     }

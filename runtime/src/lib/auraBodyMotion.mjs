@@ -13,10 +13,11 @@ export function sampleWalk(seconds,from=0,to=WALK_DISTANCE){
   const height=Math.sin(Math.PI*f)*.065;
   const l=from+(to-from)*left,r=from+(to-from)*right;
   // Shift toward the supporting leg before lifting the opposite foot.
-  const shift=u>=4?0:(i%2===0?-1:1)*.035*Math.sin(Math.PI*clamp(u-i));
-  const preparation=seconds<INTRO?-.022*Math.sin(Math.PI*clamp(seconds/INTRO)):0;
+  // Blend between support sides only during a short double-support window.
+  const shift=u>=4?0:(i%2===0?-1:1)*.035*ease((u-i)/.14)*ease((1-(u-i))/.14);
+  const preparation=seconds<INTRO?-.035*ease(seconds/INTRO):0;
   return {rootZ:(l+r)*.5,leftZ:l,rightZ:r,leftLift:next[0]!==old[0]?height:0,rightLift:next[1]!==old[1]?height:0,
-    hipDrop:.045*Math.sin(Math.PI*clamp(u/4)),weightX:shift+preparation,swing:Math.sin(Math.PI*u)*.12,wide:ease(seconds/INTRO),done:u>=4};
+    hipDrop:.045*Math.sin(Math.PI*clamp(u/4)),weightX:seconds<INTRO?preparation:u<.14?-.035:shift,swing:Math.sin(Math.PI*u)*.12,wide:ease(seconds/INTRO),done:u>=4};
 }
 export function samplePresentation(seconds){
   return ease(seconds/.7)*(1-ease((seconds-2.25)/.8));

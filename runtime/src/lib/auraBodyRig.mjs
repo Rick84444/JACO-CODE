@@ -15,6 +15,21 @@ export function createAuraBodyRig(model,bones){
       chains[side+kind]={a,b,c,l1:p.distanceTo(q),l2:q.distanceTo(r),rest:r,rotation:c.getWorldQuaternion(new THREE.Quaternion())};
     }
   }
+  const fingers=[];
+  for(const side of ['Left','Right'])for(const digit of ['Index','Middle','Ring','Pinky','Thumb']){
+    const names=[1,2,3].map(i=>side+'Hand'+digit+i);
+    if(names.some(n=>!bones.has(n)))continue;
+    const [a,b,c]=names.map(get),v=b.clone().sub(a).normalize(),w=c.clone().sub(b).normalize();
+    const axis=new THREE.Vector3().crossVectors(v,w);
+    if(axis.lengthSq()<.0001)continue;
+    axis.normalize();
+    for(let i=0;i<names.length;i++){
+      const entry=bones.get(names[i]);
+      const localAxis=axis.clone().applyQuaternion(entry.bone.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+      fingers.push({entry,axis:localAxis,side,digit,index:i});
+    }
+  }
+  const fingerDelta=new THREE.Quaternion();
   const motion=createBodyMotion();
   const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),direction=new THREE.Vector3(),pole=new THREE.Vector3(),mid=new THREE.Vector3(),target=new THREE.Vector3(),end=new THREE.Vector3(),delta=new THREE.Quaternion(),world=new THREE.Quaternion(),parent=new THREE.Quaternion();
   function orient(joint,child,destination){
@@ -50,6 +65,13 @@ export function createAuraBodyRig(model,bones){
       const idleWeight=reduced?0:behavior?.weight||0;
       const beat=reduced||p.action?0:behavior?.handBeat||0;
       const active=Boolean(p.action||p.wide>0||p.rootZ||Math.abs(idleWeight)>.001||beat>.001);
+      // Small variations around the authored finger pose; inferred bend axis comes from existing curvature.
+      for(const f of fingers){
+        const sign=f.side==='Left'?1:-1;
+        const open=p.gesture*(p.side===0?.60:p.side===sign?1:0);
+        const curl=reduced?0:(.045-.10*open+.035*beat)*(f.digit==='Thumb'?.45:1)*(f.index===2?.55:1);
+        f.entry.bone.quaternion.copy(f.entry.base).multiply(fingerDelta.setFromAxisAngle(f.axis,curl));
+      }
       if(!active&&!wasActive)return p;
       wasActive=active;
       // The base pose is restored every frame; no accumulated quaternion drift.

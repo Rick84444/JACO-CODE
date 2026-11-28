@@ -28,3 +28,11 @@ test('presentation has smooth entry and exit, and requests cannot interrupt a wa
   assert.equal(m.request('advance'),false);assert.equal(m.request('return'),true);
   assert.equal(m.update(.02,true).rootZ,0);
 });
+
+test('weight moves to support side before swing and is bounded',()=>{
+  assert.ok(sampleWalk(.55).weightX<-.025);
+  assert.ok(sampleWalk(.90).weightX<-.02);
+  assert.ok(sampleWalk(1.40).weightX>.02);
+  assert.equal(sampleWalk(3).weightX,0);
+  for(let t=0;t<3;t+=.01)assert.ok(Math.abs(sampleWalk(t).weightX)<=.035001);
+});
