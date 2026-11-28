@@ -9,11 +9,6 @@ export const ANATOMICAL_CANDIDATES=Object.freeze([
   // measurement report; a file that does not match both exactly is refused, never accepted.
   Object.freeze({version:'V31-JACO',bytes:45304080,sha256:'ea9c4646cf197f042fa4a39ea8ecd5a438adb1b0865c8eddb0749d0915bd6129'})
 ]);
-// How far the camera stands from the front of the figure so all of it fits, filling the canvas but for a margin.
-export function fullBodyDistance({height,width,aspect,fovDeg,margin=1.06}){
-  const half=Math.tan(fovDeg*Math.PI/360);
-  return margin*Math.max(height/(2*half),width/(2*half*Math.max(aspect,.05)));
-}
 export function validateAnatomicalHeader(bytes){
   const candidate=ANATOMICAL_CANDIDATES.find(c=>c.bytes===bytes.byteLength);
   if(!candidate)throw Error('AURA_ANATOMICAL_SIZE');

@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {createIceCavern,createCavernAvatar,cavernGovernor} from './auraCavern.mjs';
 import {bodyMotion,approachAngle} from './auraBodyMotion.mjs';
-import {createBlinkController,approachFacialWeight} from './auraFacialDynamics.mjs';
+import {createBlinkController,approachFacialWeight,anatomicalMouth} from './auraFacialDynamics.mjs';
 import {createConversationBehavior} from './auraConversationBehavior.mjs';
-import {fetchAnatomicalAsset,fullBodyDistance} from './auraAnatomicalAsset.mjs';
+import {fetchAnatomicalAsset} from './auraAnatomicalAsset.mjs';
+import {createFigureLights,preparePhotoMaterials,createStand,frameFigure} from './auraStand.mjs';
 import {createHeadAudioBridge,HEAD_AUDIO_VISEMES,hasHeadAudioVisemes} from './auraHeadAudio.mjs';
 
 // JACO Cognitive Lightform Engine V6 (Visual Freeze & Hardened Runtime Integration)
@@ -1093,7 +1094,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     if(anatomical&&!closeUp){
       model.updateMatrixWorld(true);
       const box=new THREE.Box3().setFromObject(model);
-      figure={size:box.getSize(new THREE.Vector3()),center:box.getCenter(new THREE.Vector3()),front:box.max.z};
+      figure={size:box.getSize(new THREE.Vector3()),center:box.getCenter(new THREE.Vector3()),front:box.max.z,floor:box.min.y,points:[]};
     }
     canvas.dataset.framing=closeUp?'portrait':fullBody?'full':'portrait';
     camera.position.set(0,1.570,1.05);camera.lookAt(0,1.540,.03);
@@ -1104,15 +1105,27 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       // Preserve source textures, skinning, morphs and separate eye/hair/garment meshes.
       // A page with its own background behind Aura (the Operator Stage) passes backdrop:false.
       if(backdrop)scene.background=new THREE.Color(0x101923);
-      renderer.toneMapping=THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure=1.05;
-      const hemisphere=new THREE.HemisphereLight(0xe4edff,0x596271,1.35);
-      const key=new THREE.DirectionalLight(0xfff4e8,2.1);key.position.set(-2,3,4);
-      const fill=new THREE.DirectionalLight(0xdce9ff,.65);fill.position.set(3,1.8,2);
-      const rim=new THREE.DirectionalLight(0xc9e7ff,1.1);rim.position.set(1,2,-3);
-      scene.add(model,hemisphere,key,fill,rim);
+      // Colours as the textures carry them, under low even light.
+      renderer.toneMapping=THREE.NoToneMapping;
+      preparePhotoMaterials(model);
+      const lights=createFigureLights();
+      scene.add(model,...lights);
       model.traverse(o=>{if(o.isSkinnedMesh)o.frustumCulled=false;});
-      lightBody={update(){},dispose(){scene.remove(model,hemisphere,key,fill,rim);}};
+      // Seen whole, she stands on her base; the face close-up has none.
+      let stand=null;
+      if(figure){
+        const feet=['LeftFoot','RightFoot'].filter(n=>bones.has(n)).map(n=>bones.get(n).bone.getWorldPosition(new THREE.Vector3()));
+        const centre={x:figure.center.x,z:feet.length?feet.reduce((z,f)=>z+f.z,0)/feet.length+.04:figure.center.z};
+        stand=createStand({floor:figure.floor,centre,feet});
+        scene.add(stand.group);
+        const {edge}=stand,halfWidth=figure.size.x/2,top=figure.floor+figure.size.y;
+        figure.points=[
+          {x:figure.center.x,y:top,z:figure.front},{x:figure.center.x,y:edge.y,z:edge.z},
+          {x:figure.center.x-halfWidth,y:top*.7,z:figure.center.z},{x:figure.center.x+halfWidth,y:top*.7,z:figure.center.z},
+          {x:edge.x-edge.radius,y:edge.y,z:edge.centreZ},{x:edge.x+edge.radius,y:edge.y,z:edge.centreZ}
+        ];
+      }
+      lightBody={update(t,energy){stand?.update(t,energy);},dispose(){stand?.dispose();scene.remove(model,...lights);}};
     }else if(cavern){
       iceWorld=createIceCavern(scene,isMobile);
       lightBody=createCavernAvatar(scene,model);
@@ -1266,8 +1279,8 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         camera.position.set(camX*.5,headAim+.03+camY,1.05);
         camera.lookAt(0,headAim,.03);
       }else if(anatomical){
-        const distance=fullBodyDistance({height:figure.size.y,width:figure.size.x,aspect:camera.aspect,fovDeg:camera.fov});
-        camera.position.set(figure.center.x+camX*.7,figure.center.y,figure.front+distance);camera.lookAt(figure.center);
+        const view=frameFigure({points:figure.points,aspect:camera.aspect,fovDeg:camera.fov,centreX:figure.center.x});
+        camera.position.set(figure.center.x+camX*.7,view.y,view.z);camera.lookAt(figure.center.x,view.y,0);
       }else if(cavern){
         const distance=Math.max(3.15,3.15/Math.min(1,camera.aspect));
         camera.position.set(camX*3.2,1.02+camY*2,distance);
@@ -1343,9 +1356,10 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         assign('jawOpen',0);
         for(const name of HEAD_AUDIO_VISEMES)assign(name,headWeights[name]);
       }else{
-        assign('jawOpen',smoothJaw);
+        const heard={jaw:smoothJaw,aa:smoothAA,O:smoothO,E:smoothE,U:smoothU},mouth=anatomical?anatomicalMouth(heard):heard;
+        assign('jawOpen',mouth.jaw);
         for(const name of HEAD_AUDIO_VISEMES)assign(name,0);
-        assign('viseme_aa',smoothAA);assign('viseme_O',smoothO);assign('viseme_E',smoothE);assign('viseme_U',smoothU);
+        assign('viseme_aa',mouth.aa);assign('viseme_O',mouth.O);assign('viseme_E',mouth.E);assign('viseme_U',mouth.U);
       }
       assign('mouthSmileLeft',smile);assign('mouthSmileRight',smile);
       assign('browInnerUp',still?0:turn?turn.brow:.05+.15*energy*(.5+.5*Math.sin(t*1.25))+smoothJaw*.15+(isDecision?.14:0));

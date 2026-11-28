@@ -13,7 +13,7 @@ const JS = 'text/javascript; charset=utf-8';
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': JS, '.mjs': JS };
 // The modules the rig imports beside itself. One that is not served fails the whole rig, and the particle ball
 // takes Aura's place, so the test walks the real import graph.
-export const RIG_MODULES = ['auraCavern.mjs', 'auraBodyMotion.mjs', 'auraFacialDynamics.mjs', 'auraConversationBehavior.mjs', 'auraAnatomicalAsset.mjs', 'auraHeadAudio.mjs'];
+export const RIG_MODULES = ['auraCavern.mjs', 'auraBodyMotion.mjs', 'auraFacialDynamics.mjs', 'auraConversationBehavior.mjs', 'auraAnatomicalAsset.mjs', 'auraHeadAudio.mjs', 'auraStand.mjs'];
 const rigModules = dir => Object.fromEntries(RIG_MODULES.map(name => ['/vendor/' + name, path.join(dir, name)]));
 
 function layout(runtimeRoot) {

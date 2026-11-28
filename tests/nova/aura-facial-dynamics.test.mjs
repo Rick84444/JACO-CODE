@@ -37,3 +37,16 @@ test('facial smoothing depends on elapsed time, not number of frames',()=>{
   assert.equal(approachFacialWeight(NaN,1,1/30,.3),0);
   assert.equal(approachFacialWeight(.3,.9,0,.3),.3);
 });
+
+// 2026-11-28: with the anatomical model, speech opened the mouth into a round shout (31 mm, jaw plus visemes).
+test('the anatomical mouth opens moderately while speaking and stays shut in silence',async()=>{
+  const {anatomicalMouth}=await import('../../runtime/src/lib/auraFacialDynamics.mjs');
+  assert.deepEqual(anatomicalMouth({jaw:0,aa:0,O:0,E:0,U:0}),{jaw:0,aa:0,O:0,E:0,U:0});
+  const loud=anatomicalMouth({jaw:.51,aa:.8,O:.8,E:.5,U:.4});
+  assert.ok(loud.jaw>.08&&loud.jaw<=.18,'jaw '+loud.jaw);
+  assert.ok(loud.aa+loud.O+loud.E+loud.U<=.451,'the shapes together stay bounded');
+  assert.ok(loud.O<loud.aa,'the round shape is the most restrained');
+  const quiet=anatomicalMouth({jaw:.2,aa:.2,O:0,E:0,U:0});
+  assert.ok(quiet.aa>.05&&quiet.jaw>.02,'quiet speech still shows');
+  assert.deepEqual(anatomicalMouth({jaw:NaN,aa:-1,O:9}).jaw,0);
+});

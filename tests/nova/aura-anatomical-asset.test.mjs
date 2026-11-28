@@ -37,17 +37,3 @@ test('the model textures load within the page security policy, without widening 
   assert.match(policy, /"img-src 'self' data: blob:"/);
   assert.match(policy, /: "connect-src 'self'",/);
 });
-
-// Operator 2026-11-28: "see all of her". The full-body camera is fitted to the model's measured size, so head and
-// boots stay in view in a tall and in a narrow canvas without shrinking her to half the height.
-test('the full-body camera fits the whole figure and fills the canvas', async () => {
-  const { fullBodyDistance } = await import('../../runtime/src/lib/auraAnatomicalAsset.mjs');
-  const fovDeg = 42, half = Math.tan(fovDeg * Math.PI / 360);
-  for (const aspect of [1.6, 0.74, 0.3]) {
-    const size = { height: 1.8, width: 1.1 };
-    const distance = fullBodyDistance({ ...size, aspect, fovDeg });
-    const viewHeight = 2 * distance * half, viewWidth = viewHeight * aspect;
-    assert.ok(viewHeight >= size.height && viewWidth >= size.width, `cut off at aspect ${aspect}`);
-    assert.ok(Math.max(size.height / viewHeight, size.width / viewWidth) > 0.9, `too small at aspect ${aspect}`);
-  }
-});

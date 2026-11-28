@@ -12,6 +12,15 @@ export function approachFacialWeight(current,target,dt,referenceAlpha){
   return clamp(target+(current-target)*Math.pow(1-a,dt*30),0,1);
 }
 
+// The anatomical model's mouth shapes are full-strength targets: the jaw and several shapes at once opened her mouth
+// into a round shout. Speech uses a part of each, and together the shapes stay within one bounded opening.
+export function anatomicalMouth(weights){
+  const w=name=>Number.isFinite(weights?.[name])?clamp(weights[name],0,1):0;
+  const shapes={aa:w('aa')*.55,O:w('O')*.3,E:w('E')*.5,U:w('U')*.35};
+  const total=shapes.aa+shapes.O+shapes.E+shapes.U,fit=total>.45?.45/total:1;
+  return {jaw:w('jaw')*.3,aa:shapes.aa*fit,O:shapes.O*fit,E:shapes.E*fit,U:shapes.U*fit};
+}
+
 export function createBlinkController(seed=0x5ca1ab1e){
   let rng=seed>>>0;
   const rand=()=>{rng=(Math.imul(rng,1664525)+1013904223)>>>0;return rng/4294967296;};
