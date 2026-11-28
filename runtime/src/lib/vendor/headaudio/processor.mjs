@@ -7,15 +7,15 @@ import { Classifier } from "./classifier.mjs";
 
 /**
 * Audio processor for handling audio-driven viseme detection.
-* 
-* @class 
+*
+* @class
 * @author Mika Suominen
 */
 class Processor {
 
   /**
   * Creates a new instance of the audio processor.
-  * 
+  *
   * @constructor
   * @param {object} [options] Initialization data
   * @param {object} [worklet=null] Audio worket processor.
@@ -37,7 +37,7 @@ class Processor {
       vadGateInactiveMs: 10,
       silMode: 1,
       silCalibrationWindowSec: 3.0,
-      silSensitivity: 1.2 
+      silSensitivity: 1.2
     }, options?.parameterData || {});
 
     // Worklet, use dummy for testing
@@ -106,7 +106,7 @@ class Processor {
 
   /**
   * Event handler.
-  * 
+  *
   * @param {Object} message Message from main thread.
   */
   _onmessage(message) {
@@ -173,7 +173,7 @@ class Processor {
 
   /**
   * Update options.
-  * 
+  *
   * @param {object} options Options
   */
   update(options) {
@@ -192,16 +192,16 @@ class Processor {
         case "silSensitivity":
           this.silSensitivity = value;
           break;
-        
+
         case "silCalibrationWindowSec":
           const calibrationWindowN = Math.max( 100, Math.floor( value * PARAMS.MFCC_SAMPLES_HOP / PARAMS.AUDIO_SAMPLE_RATE ));
           this.ringCalibration = new RingBuffer( calibrationWindowN );
           break;
-        
+
         case "speakerMeanHz":
           this.mfcc.update({ speakerMeanHz: value });
           break;
-        
+
         case "timerReset":
           this.sampleCount = 0;
           break;
@@ -254,7 +254,7 @@ class Processor {
         const phaseFraction = (this.downsamplePhaseAccumulator - 1) * PARAMS.AUDIO_DOWNSAMPLE_PHASE_N;
         const phaseIndex = Math.floor(phaseFraction);
         const coeffs = this.downsamplePolyFilter[phaseIndex];
-        
+
         // Downsampled sample
         let d1 = 0;
         const filter = this.ringPolyFilter;
@@ -376,7 +376,7 @@ class Processor {
               this.worklet.port.postMessage({ event: 'started', t });
             }
           }
-          
+
           // Viseme message
           if ( this.isSpeaking ) {
             let message = {
@@ -393,7 +393,7 @@ class Processor {
           }
 
         }
-        
+
       }
 
     }

@@ -3,7 +3,7 @@ import * as PARAMS from "./parameters.mjs";
 /**
 * Voice Active Detection using simple gate model.
 *
-* @class 
+* @class
 * @author Mika Suominen
 */
 
@@ -11,7 +11,7 @@ class VadGate {
 
   /**
   * Creates a new instance.
-  * 
+  *
   * @constructor
   * @param {object} [options] Initial settings
   */
@@ -45,7 +45,7 @@ class VadGate {
 
   /**
   * Update options.
-  * 
+  *
   * @param {object} options Options
   */
   update(options) {
@@ -73,7 +73,7 @@ class VadGate {
 
   /**
   * Update VAD statistics for a frame.
-  * 
+  *
   * @param {number} logEnergy Log energy
   * @return {{active: number, inactive: number}}
   */
@@ -114,7 +114,7 @@ class VadGate {
     }
 
     return {
-      active: this.active, inactive: this.inactive 
+      active: this.active, inactive: this.inactive
     };
   }
 

@@ -3,8 +3,8 @@ import { RingBuffer } from "./ringbuffer.mjs";
 
 /**
 * Gaussian prototype model with Mahalanobis classifier.
-* 
-* @class 
+*
+* @class
 * @author Mika Suominen
 */
 class Classifier {
@@ -59,11 +59,11 @@ class Classifier {
 
   /**
   * Import a new Gaussian prototype model (binary).
-  * 
+  *
   * @param {Object} data Model event data.
   */
   import(data) {
-    
+
     // Reset?
     if ( data?.reset ) {
       this.clear();
@@ -82,7 +82,7 @@ class Classifier {
       }
     }
     if ( groups.length ) {
-      this.prototypes = this.prototypes.filter( x => !groups.includes(x.group) ); 
+      this.prototypes = this.prototypes.filter( x => !groups.includes(x.group) );
     }
 
     // Add new prototypes
@@ -98,7 +98,7 @@ class Classifier {
 
   /**
   * Update options.
-  * 
+  *
   * @param {object} options Options
   */
   update(options) {
@@ -112,7 +112,7 @@ class Classifier {
 
   /**
   * Mahalanobis distance for Gaussian prototype.
-  * 
+  *
   * @param {Float32Array} v Feature vector
   * @param {Float32Array} mu
   * @param {Float32Array} sigmaInvLower
@@ -150,16 +150,16 @@ class Classifier {
 
 	/**
 	* Predict the viseme.
-	* 
+	*
   * NOTE: Distances are rewritten on the subsequent call.
-  * 
+  *
 	* @param {Float32Array} vector Feature vector
 	* @return {Object} { viseme, distances }.
 	*/
 	predict(vector) {
 
     const N = this.prototypesN;
-    
+
     // If no model, return null
     if ( N === 0 ) {
       return {
@@ -172,7 +172,7 @@ class Classifier {
     const prototypes = this.prototypes;
     const distances = this.distances;
     let minD = Infinity; // Distance
-    let minP = 0; // Prototype  
+    let minP = 0; // Prototype
     for( let i = 0; i < N; i++ ) {
       const p = prototypes[i];
       let d = this.distanceMahalanobis(vector, p.mu, p.sigmaInvLower);

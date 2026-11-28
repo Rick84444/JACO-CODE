@@ -2,23 +2,23 @@
 /**
 * Fixed-size ring buffer.
 *
-* @class 
+* @class
 * @author Mika Suominen
 */
 class RingBuffer {
 
   /**
   * Create a new RingBuffer of given capacity.
-  * 
+  *
   * @constructor
   * @param {number} capacity Maximum number of items the buffer can hold
   * @param {function} [fn=undefined] Populate items
   * @param {function} [full=false] If true, init as full.
   */
   constructor(capacity, fn=undefined, full=false) {
-    
+
     this.buf = Array.from({ length: capacity }, fn );
-    
+
     this.capacity = capacity;
     this.head = 0; // Index of oldest element
     this.tail = 0; // Index of next write
@@ -27,7 +27,7 @@ class RingBuffer {
 
   /**
    * Add item.
-   * 
+   *
    * @param {any} item
    */
   add(item) {
@@ -44,7 +44,7 @@ class RingBuffer {
 
   /**
    * Allocate the next item and advance.
-   * 
+   *
    * @return {any} Reference to the new allocated item.
    */
   allocate() {
@@ -127,7 +127,7 @@ class RingBuffer {
     }
 
     // Update status
-    if ( hop !== null && hop >= 0 && hop <= N ) { 
+    if ( hop !== null && hop >= 0 && hop <= N ) {
       this.head = (this.head + hop ) % c;
       this.count = N - hop;
     }
@@ -137,7 +137,7 @@ class RingBuffer {
 
   /**
   * Clear the buffer.
-  * 
+  *
   * @param {number} [cnt=0] Number of items to leave.
   */
   clear( cnt = 0 ) {

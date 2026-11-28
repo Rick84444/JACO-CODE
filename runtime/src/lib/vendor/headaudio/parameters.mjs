@@ -25,7 +25,7 @@ export const MFCC_COMPRESSION_TANH_R = 1.0; // Tanh compression range. (1.0)
 export const MODEL_VISEMES_N = 15; // The number of visemes (15)
 export const MODEL_VISEME_SIL = 14; // Silence viseme ID (14)
 
-// Binary record, 
+// Binary record,
 // NOTE: Field offsets in bytes and lengths in 32-bit floats
 export const RECORD_HEADER_OFFSET = 0;
 export const RECORD_HEADER_LEN = 2;

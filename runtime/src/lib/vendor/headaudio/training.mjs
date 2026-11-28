@@ -2,8 +2,8 @@ import * as PARAMS from "./parameters.mjs";
 
 /**
 * Gaussian prototype model with Mahalanobis classifier.
-* 
-* @class 
+*
+* @class
 * @author Mika Suominen
 */
 class Training {
@@ -45,7 +45,7 @@ class Training {
 
   /**
   * Calculate Gaussian prototype and its binary representation.
-  * 
+  *
   * @param {string} phoneme IPA phoneme, 0-2 BPM characters
   * @param {number} group Group ID
   * @param {number} viseme Viseme ID
@@ -168,7 +168,7 @@ class Training {
 
   /**
   * Decode binary record.
-  * 
+  *
   * @param {TypedArray} record Record view
   * @return {Object} Prototype record { viseme, group, mu, sigmaInvLower }
   */
@@ -187,7 +187,7 @@ class Training {
 
   /**
   * Decode binary record.
-  * 
+  *
   * @param {string} location URL or path to .bin model file
   * @param {number} [group=null] Override group id
   * @return {Object[]} Array of prototype records { viseme, group, mu, sigmaInvLower }.
@@ -223,16 +223,6 @@ class Training {
     return { model, buffer };
   }
 
-  /**
-  * Update options.
-  * 
-  * @param {object} options Options
-  */
-  update(options) {
-    for (const name in options) {
-      // TODO
-    }
-  }
 
 }
 

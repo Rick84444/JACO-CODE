@@ -27,7 +27,7 @@ import * as PARAMS from "./parameters.mjs";
 /**
 * Calculate mel-frequency cepstral coefficients (MFCC)
 *
-* @class 
+* @class
 * @author Mika Suominen
 */
 
@@ -211,7 +211,7 @@ class MFCC {
 
   /**
   * Update options.
-  * 
+  *
   * @param {object} options Options
   */
   update(options) {
@@ -225,7 +225,7 @@ class MFCC {
 
   /**
 	* Compute MFCC feature vector.
-	* 
+	*
 	* @param {Block} block Sample block
   * @param {MFCC} [out] Pre-allocated MFCC feature vector (12 features, excluding log energy)
 	* @return {Object} Log energy and the mfcc feature vector { le, mfcc }
