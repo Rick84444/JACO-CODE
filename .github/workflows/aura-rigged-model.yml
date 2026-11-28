@@ -17,6 +17,8 @@ on:
       - 'runtime/src/lib/auraOptics*.mjs'
       - 'runtime/src/lib/auraV31OpticalRig.mjs'
       - 'runtime/src/lib/auraSurfaceDetail*.mjs'
+      - 'runtime/src/lib/auraOralOptics*.mjs'
+      - 'runtime/src/lib/auraStudioFloor.mjs'
       - 'runtime/src/lib/auraSecondary*.mjs'
       - 'runtime/src/lib/workspaceActions*.mjs'
       - 'runtime/operator-stage/**'
@@ -60,7 +62,7 @@ jobs:
           node --check runtime/src/lib/auraBodyRig.mjs
           node --check runtime/src/lib/auraV31OpticalRig.mjs
           node --check runtime/src/lib/auraSecondaryRig.mjs
-          node --test runtime/src/lib/auraSpeechTimeline.test.mjs runtime/src/lib/auraBodyMotion.test.mjs runtime/src/lib/auraHumanBehavior.test.mjs runtime/src/lib/auraOptics.test.mjs runtime/src/lib/auraSurfaceDetail.test.mjs runtime/src/lib/auraSecondaryMotion.test.mjs runtime/src/lib/workspaceActions.test.mjs tests/nova/operator-stage-assets.test.mjs
+          node --test runtime/src/lib/auraSpeechTimeline.test.mjs runtime/src/lib/auraBodyMotion.test.mjs runtime/src/lib/auraHumanBehavior.test.mjs runtime/src/lib/auraOptics.test.mjs runtime/src/lib/auraSurfaceDetail.test.mjs runtime/src/lib/auraOralOptics.test.mjs runtime/src/lib/auraSecondaryMotion.test.mjs runtime/src/lib/workspaceActions.test.mjs tests/nova/operator-stage-assets.test.mjs
       - name: Install isolated pinned Three dependency for real WebGL shader probe
         run: npm install --prefix "$RUNNER_TEMP/aura-webgl" --ignore-scripts --no-audit --no-fund --save-exact three@0.186.1
       - name: Compile skin, eye and hair shaders in Chromium
