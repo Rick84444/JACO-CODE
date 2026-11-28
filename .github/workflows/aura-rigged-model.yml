@@ -5,6 +5,7 @@ on:
       - '.github/workflows/aura-rigged-model.yml'
       - 'runtime/scripts/inspect-aura-rig.mjs'
       - 'runtime/scripts/inspect-aura-v31.mjs'
+      - 'runtime/scripts/verify-aura-optical-webgl.mjs'
       - 'runtime/scripts/install-aura-v31.mjs'
       - 'runtime/scripts/prepare-aura-v31.mjs'
       - 'runtime/package.json'
@@ -60,6 +61,10 @@ jobs:
           node --check runtime/src/lib/auraV31OpticalRig.mjs
           node --check runtime/src/lib/auraSecondaryRig.mjs
           node --test runtime/src/lib/auraSpeechTimeline.test.mjs runtime/src/lib/auraBodyMotion.test.mjs runtime/src/lib/auraHumanBehavior.test.mjs runtime/src/lib/auraOptics.test.mjs runtime/src/lib/auraSurfaceDetail.test.mjs runtime/src/lib/auraSecondaryMotion.test.mjs runtime/src/lib/workspaceActions.test.mjs tests/nova/operator-stage-assets.test.mjs
+      - name: Install isolated pinned Three dependency for real WebGL shader probe
+        run: npm install --prefix "$RUNNER_TEMP/aura-webgl" --ignore-scripts --no-audit --no-fund --save-exact three@0.186.1
+      - name: Compile skin, eye and hair shaders in Chromium
+        run: node runtime/scripts/verify-aura-optical-webgl.mjs "$RUNNER_TEMP/aura-webgl/node_modules/three"
       - uses: actions/upload-artifact@v4
         with:
           name: aura-verified-rig

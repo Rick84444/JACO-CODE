@@ -1103,6 +1103,8 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
           canvas.dataset.eyePupilShader=status.pupilReady?'configured':'unavailable';
           canvas.dataset.studioEnvironment=status.environmentReady?'configured':'unavailable';
           canvas.dataset.opticalSurfaceCount=String(status.surfaceCount);
+          canvas.dataset.skinDetailShader=status.skinDetailReady?'configured':'unavailable';
+          canvas.dataset.hairDetailShader=status.hairDetailReady?'configured':'unavailable';
         },
         dispose(){optics.dispose();}
       };
