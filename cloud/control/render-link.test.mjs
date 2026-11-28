@@ -31,6 +31,14 @@ function fakePool(){
         const ciphertext=data.get(JSON.stringify([args[0],args[1]]));
         return {rows:ciphertext===undefined?[]:[{ciphertext}]};
       }
+      if(sql.startsWith('SELECT key,ciphertext FROM jaco_link_kv')){
+        const rows=[];
+        for(const [encoded,ciphertext] of data){
+          const [namespace,key]=JSON.parse(encoded);
+          if(namespace===args[0]&&key.startsWith(args[1]))rows.push({key,ciphertext});
+        }
+        return {rows:rows.sort((a,b)=>a.key.localeCompare(b.key)).slice(0,1001)};
+      }
       if(sql.startsWith('INSERT INTO jaco_link_kv')){
         data.set(JSON.stringify([args[0],args[1]]),args[2]);
         return {rowCount:1};
