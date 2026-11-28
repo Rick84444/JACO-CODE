@@ -18,12 +18,19 @@ export function sampleWalk(seconds,from=0,to=WALK_DISTANCE){
   const left=mix(old[0],next[0],f)/WALK_DISTANCE,right=mix(old[1],next[1],f)/WALK_DISTANCE;
   const height=Math.sin(Math.PI*f)*.065;
   const l=from+(to-from)*left,r=from+(to-from)*right;
-  // Shift toward the supporting leg before lifting the opposite foot.
-  // Blend between support sides only during a short double-support window.
-  const shift=u>=4?0:(i%2===0?-1:1)*.035*ease((u-i)/.14)*ease((1-(u-i))/.14);
+  // Continuous pelvis progression, independent of the foot swing easing.
+  // The earlier midpoint-of-feet path stopped at every step boundary.
+  const rootZ=mix(from,to,ease(u/4));
+  // Transfer weight across double support with continuous first derivatives.
+  let shift=(i%2===0?-1:1)*.035;
+  const phase=u-i;
+  if(i>0&&phase<.16)shift=mix(-shift,shift,ease((phase+.16)/.32));
+  if(i<3&&phase>.84)shift=mix(shift,-shift,ease((phase-.84)/.32));
+  if(i===3&&phase>.75)shift*=1-ease((phase-.75)/.25);
+  if(u>=4)shift=0;
   const preparation=seconds<INTRO?-.035*ease(seconds/INTRO):0;
-  return {rootZ:(l+r)*.5,leftZ:l,rightZ:r,leftLift:next[0]!==old[0]?height:0,rightLift:next[1]!==old[1]?height:0,
-    hipDrop:.045*Math.sin(Math.PI*clamp(u/4)),weightX:seconds<INTRO?preparation:u<.14?-.035:shift,swing:Math.sin(Math.PI*u)*.12,wide:ease(seconds/INTRO),done:u>=4};
+  return {rootZ,leftZ:l,rightZ:r,leftLift:next[0]!==old[0]?height:0,rightLift:next[1]!==old[1]?height:0,
+    hipDrop:.045*Math.sin(Math.PI*clamp(u/4))**2,weightX:seconds<INTRO?preparation:shift,swing:Math.sin(Math.PI*u)*.12*Math.sin(Math.PI*u/4),wide:ease(seconds/INTRO),done:u>=4};
 }
 export function samplePresentation(seconds){
   return ease(seconds/.7)*(1-ease((seconds-2.25)/.8));

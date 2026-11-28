@@ -48,3 +48,12 @@ test('at rest the hands hang beside the thighs, within reach and outside the bod
   const mirrored=relaxedHandTarget({x:-.17,y:1.42,z:0},{x:-.62,y:1.05,z:.02},reach);
   assert.ok(Math.abs(mirrored.x+h.x)<1e-9&&mirrored.y===h.y);
 });
+
+test('pelvis does not stop at each foot change; support transfer is continuous',()=>{
+ for(const boundary of [.65+ .5,.65+1,.65+1.5]){
+  const a=sampleWalk(boundary-.001),b=sampleWalk(boundary),c=sampleWalk(boundary+.001);
+  assert.ok((c.rootZ-a.rootZ)/.002>.15,'pelvis velocity');
+  assert.ok(Math.abs(a.weightX-b.weightX)<.001&&Math.abs(c.weightX-b.weightX)<.001,'continuous support transfer');
+ }
+ for(const boundary of [.65,2.65])assert.ok(Math.abs(sampleWalk(boundary+.001).weightX-sampleWalk(boundary-.001).weightX)<.001);
+});

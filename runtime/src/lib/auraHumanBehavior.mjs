@@ -9,6 +9,7 @@ export function createHumanBehavior(seed=0xa031){
   const random=()=>{s=(Math.imul(s,1664525)+1013904223)>>>0;return s/4294967296;};
   let time=0,mode='idle',age=0,attentionX=0,attentionY=0,nextGlance=3.5,glanceUntil=0,glanceX=0,glanceY=0;
   let cue=null,priorLevel=0,accent=0,accentPeak=0,nextAccent=0,accentAt=-10,breathPhase=0,headX=0,headY=0,oldHeadX=0,oldHeadY=0,hairX=0,hairY=0,weight=0,nextWeight=4,weightTarget=0;
+  let brow=0,smile=0,cheek=0,roll=0,nodPose=0;
   const out={mode:'idle',headYaw:0,headPitch:0,headRoll:0,eyeX:0,eyeY:0,brow:0,smile:0,cheek:0,breath:0,handBeat:0,weight:0,hairYaw:0,hairPitch:0,accent:0};
   function neutral(){for(const key of Object.keys(out))if(key!=='mode')out[key]=0;out.mode='idle';return out;}
   return {
@@ -18,7 +19,7 @@ export function createHumanBehavior(seed=0xa031){
     },
     update(input={},delta=.033,reduced=false){
       const dt=clamp(delta,0,.1);
-      if(reduced){cue=null;mode='idle';age=0;accent=accentPeak=0;accentAt=-10;priorLevel=0;headX=headY=oldHeadX=oldHeadY=attentionX=attentionY=hairX=hairY=weight=0;weightTarget=0;glanceUntil=0;nextGlance=time+3;nextWeight=time+4;return neutral();}
+      if(reduced){cue=null;mode='idle';age=0;accent=accentPeak=0;accentAt=-10;priorLevel=0;headX=headY=oldHeadX=oldHeadY=attentionX=attentionY=hairX=hairY=weight=0;weightTarget=0;brow=smile=cheek=roll=nodPose=0;glanceUntil=0;nextGlance=time+3;nextWeight=time+4;return neutral();}
       time+=dt;
       // Listening interrupts a presentation's attention, speaking wins over work telemetry.
       const next=input.listening?'listening':input.speaking?'speaking':input.phase==='awaiting_decision'?'decision':input.phase==='verifying'?'verifying':input.active||input.phase==='analyzing'?'thinking':'idle';
@@ -57,13 +58,16 @@ export function createHumanBehavior(seed=0xa031){
       oldHeadX=headX;oldHeadY=headY;
       hairX=damp(hairX,clamp(-dx*.06,-.07,.07),dt,.16);
       hairY=damp(hairY,clamp(-dy*.05,-.055,.055),dt,.18);
-      out.mode=mode;out.headYaw=headX;out.headPitch=headY+nod;out.headRoll=clamp(-headX*.09+(mode==='listening'?.018:0),-.06,.06);
+      nodPose=damp(nodPose,nod,dt,.085);
+      roll=damp(roll,clamp(-headX*.09+(mode==='listening'?.018:0),-.06,.06),dt,.22);
+      out.mode=mode;out.headYaw=headX;out.headPitch=headY+nodPose;out.headRoll=roll;
       out.eyeX=clamp((attentionX-headX)*1.6,-.38,.38);out.eyeY=clamp((attentionY-headY)*1.5,-.22,.22);
-      out.brow=clamp((mode==='decision'?.075:mode==='listening'?.035:0)+accent*.065,0,.15);
       const tone=mode==='speaking'?input.presentationTone:'neutral';
-      out.smile=mode==='listening'?.05:mode==='speaking'?(tone==='warm'?.055:tone==='concerned'?.009:.018)+accent*.018:.028;
-      if(tone==='focused'||tone==='concerned')out.brow=clamp(out.brow+.025,0,.15);
-      out.cheek=clamp(out.smile*.4+accent*.027,0,.085);
+      const browTarget=clamp((mode==='decision'?.075:mode==='listening'?.035:0)+accent*.065+((tone==='focused'||tone==='concerned')?.025:0),0,.15);
+      const smileTarget=mode==='listening'?.05:mode==='speaking'?(tone==='warm'?.055:tone==='concerned'?.009:.018)+accent*.018:.028;
+      brow=damp(brow,browTarget,dt,.17);smile=damp(smile,smileTarget,dt,.24);
+      cheek=damp(cheek,clamp(smile*.4+accent*.027,0,.085),dt,.19);
+      out.brow=brow;out.smile=smile;out.cheek=cheek;
       out.breath=breath;out.handBeat=mode==='speaking'?pulse(time,accentAt+.07,.65)*accentPeak:0;
       out.weight=weight;out.hairYaw=hairX;out.hairPitch=hairY;out.accent=accent;
       return out;

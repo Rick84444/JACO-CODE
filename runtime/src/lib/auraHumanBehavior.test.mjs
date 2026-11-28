@@ -36,3 +36,12 @@ test('reduced motion resets all channels and invalid input stays finite',()=>{
 test('idle avoids talk beats, breath and weight remain bounded',()=>{
   const b=createHumanBehavior();for(let i=0;i<3000;i++){const p=b.update({},.033);assert.equal(p.handBeat,0);assert.ok(Math.abs(p.breath)<=1);assert.ok(Math.abs(p.weight)<=.013);}
 });
+
+test('facial expression and head roll ease across rapid mode changes',()=>{
+ const b=createHumanBehavior();let before;
+ for(let i=0;i<60;i++)before={...b.update({speaking:true,presentationTone:'concerned'},.016)};
+ const after={...b.update({listening:true},.016)};
+ for(const k of ['smile','brow','cheek','headRoll','headPitch'])assert.ok(Math.abs(after[k]-before[k])<.012,k);
+ for(let i=0;i<100;i++)before={...b.update({listening:true},.016)};
+ assert.ok(before.smile>.048);assert.ok(before.headRoll>.017);
+});
