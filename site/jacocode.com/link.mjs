@@ -45,8 +45,8 @@ function pending(env,code) {
 function room(env,sub) {
   return env.LINK_ROOMS.get(env.LINK_ROOMS.idFromName('account:'+sub));
 }
-function originOk(request) { return request.headers.get('origin')===ORIGIN; }
-function signedIn(request,env){return verifySiteSession(request,env.SESSION_SECRET);}
+function originOk(request,env) { return request.headers.get('origin')===(env.PUBLIC_ORIGIN||ORIGIN); }
+function signedIn(request,env){return verifySiteSession(request,env.SESSION_SECRET,true);}
 async function quota(env,identity,limit) {
   const obj = env.LINK_PAIRINGS.get(env.LINK_PAIRINGS.idFromName('quota:'+identity));
   return obj.fetch('https://internal/quota',{method:'POST',body:JSON.stringify({limit})});
@@ -72,7 +72,7 @@ export async function handleLink(request,env,url) {
       method:'POST',body:JSON.stringify({hash:await sha(pollToken),until:Date.now()+MAX_PAIR_AGE}),
     });
     return json({protocol:LINK_PROTOCOL,code,pollToken,
-      approvalUrl:ORIGIN+'/link/connect.html?code='+encodeURIComponent(code),
+      approvalUrl:(env.PUBLIC_ORIGIN||ORIGIN)+'/link/connect.html?code='+encodeURIComponent(code),
       expiresIn:600});
   }
   if (route==='/link/v1/poll' && request.method==='GET') {
@@ -88,7 +88,7 @@ export async function handleLink(request,env,url) {
   if (route==='/link/v1/me' && request.method==='GET')
     return json({signedIn:true,name:session.name||'',email:session.email||''});
   if (route==='/link/v1/claim' && request.method==='POST') {
-    if (!originOk(request)) return json({error:'ORIGIN_DENIED'},403);
+    if (!originOk(request,env)) return json({error:'ORIGIN_DENIED'},403);
     const body=await safeJson(request);
     if(!validCode(body.code))return json({error:'PAIR_CODE_INVALID'},400);
     const r=await quota(env,'account:'+await sha(session.sub),40);
@@ -108,7 +108,7 @@ export async function handleLink(request,env,url) {
   if (route==='/link/v1/calls' && request.method==='GET')
     return room(env,session.sub).fetch('https://internal/calls');
   if (route==='/link/v1/revoke' && request.method==='POST') {
-    if(!originOk(request))return json({error:'ORIGIN_DENIED'},403);
+    if(!originOk(request,env))return json({error:'ORIGIN_DENIED'},403);
     const data=await safeJson(request);
     if(!validCode(data.deviceId))return json({error:'INVALID_DEVICE'},400);
     return room(env,session.sub).fetch('https://internal/revoke',{
@@ -118,9 +118,9 @@ export async function handleLink(request,env,url) {
   if (route==='/link/ws' && request.headers.get('upgrade')?.toLowerCase()==='websocket') {
     const role=url.searchParams.get('role');
     if (role==='phone') {
-      if(!originOk(request))return socketError('ORIGIN_DENIED');
+      if(!originOk(request,env))return socketError('ORIGIN_DENIED');
       return room(env,session.sub).fetch(new Request('https://internal/ws',{
-        headers:{upgrade:'websocket','x-jaco-link-role':'phone'},
+        headers:{upgrade:'websocket','x-jaco-link-role':'phone','x-jaco-link-session-exp':String(session.expiresAt)},
       }));
     }
   }
@@ -256,10 +256,14 @@ export class JacoLinkRoom {
         if(ws.deserializeAttachment().deviceId===deviceId)ws.close(4001,'Host replaced');
       }
     } else if(this.sockets('phone').length>=MAX_BROWSERS) return json({error:'TOO_MANY_PHONES'},429);
+    const sessionExpiry=Number(request.headers.get('x-jaco-link-session-exp')||0);
+    const attachment={role,deviceId:role==='host'?deviceId:null,sessionId:random(16),
+      expiresAt:role==='host'?expiresAt:(sessionExpiry||null),pending:[]};
+    // Render injects an HTTPS/WSS adapter; Cloudflare keeps its native upgrade.
+    if(this.ctx.upgrade)return this.ctx.upgrade(attachment);
     const [client,server]=Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({role,deviceId:role==='host'?deviceId:null,
-      sessionId:random(16),expiresAt:role==='host'?expiresAt:null,pending:[]});
+    server.serializeAttachment(attachment);
     return new Response(null,{status:101,webSocket:client});
   }
   send(ws,value){try{ws.send(JSON.stringify(value));}catch{/* client disconnected */}}
@@ -299,12 +303,13 @@ export class JacoLinkRoom {
         state:'UNKNOWN',error:'AURA_CALL_PERSISTENCE_UNVERIFIED'});
     }
   }
-  webSocketMessage(ws, raw) {
+  async webSocketMessage(ws, raw) {
     if(typeof raw!=='string'||raw.length>MAX_MESSAGE_BYTES){ws.close(1009,'Message too large');return;}
     let value;
     try {value=JSON.parse(raw);}catch{this.send(ws,{type:'error',error:'INVALID_JSON'});return;}
     const info=ws.deserializeAttachment();
     if(info?.role==='phone'){
+      if(info.expiresAt&&info.expiresAt<=Date.now()){ws.close(4003,'Session expired');return;}
       if(value?.type!=='rpc')return this.send(ws,{type:'error',error:'UNKNOWN_MESSAGE_TYPE'});
       const count=this.counters.get(ws)||{start:Date.now(),used:0};
       if(Date.now()-count.start>60_000){count.start=Date.now();count.used=0;}
@@ -338,6 +343,15 @@ export class JacoLinkRoom {
       });
       if(hosts.length!==1)return this.send(ws,{type:'rpc_result',id:valid.id,status:503,
         body:{error:hosts.length?'SELECT_A_PC':'PC_OFFLINE'}});
+      // Render persists mutation admission before network delivery. A restart or
+      // timeout cannot turn a previous unknown write into a fresh dispatch.
+      if(valid.method==='POST'&&this.ctx.reserveRpc){
+        let admitted;
+        try{admitted=await this.ctx.reserveRpc(hosts[0].deserializeAttachment().deviceId,valid.id);}
+        catch{return this.send(ws,{type:'rpc_result',id:valid.id,status:503,body:{error:'ADMISSION_OUTCOME_UNKNOWN'}});}
+        if(!admitted)return this.send(ws,{type:'rpc_result',id:valid.id,status:409,body:{error:'DUPLICATE_REQUEST_ID'}});
+        if(!this.sockets('host').includes(hosts[0])||!this.sockets('phone').includes(ws))return this.send(ws,{type:'rpc_result',id:valid.id,status:503,body:{error:'PC_DISCONNECTED_OUTCOME_UNKNOWN'}});
+      }
       const current=ws.deserializeAttachment();
       ws.serializeAttachment({...current,pending:[...(current.pending||[]),
         {id:valid.id,hostSessionId:hosts[0].deserializeAttachment().sessionId,at:now}]});
@@ -360,6 +374,7 @@ export class JacoLinkRoom {
         const held=(a?.pending||[]).find(p=>p.id===value.id&&p.hostSessionId===info.sessionId);
         if(!held)continue;
         phone.serializeAttachment({...a,pending:a.pending.filter(p=>p!==held)});
+        if(this.ctx.recordRpcResponse)await this.ctx.recordRpcResponse(info.deviceId,value.id,value.status).catch(()=>{});
         this.send(phone,value);
         return;
       }

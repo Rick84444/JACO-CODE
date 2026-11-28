@@ -6,6 +6,7 @@ import WebSocket from 'ws';
 import { validateRemoteCall, validateAuraCallRequest, MAX_RESPONSE_BYTES } from '../../../../site/jacocode.com/link-protocol.mjs';
 
 const DEFAULT_ORIGIN = 'https://jacocode.com';
+const TRUSTED_ORIGINS = new Set([DEFAULT_ORIGIN,'https://cloud.jacocode.com','https://jaco-cloud-validation.onrender.com']);
 const CODE = /^[A-Za-z0-9_-]{18,28}$/;
 const RETRY_MS = 10_000;
 const json = (value) => JSON.stringify(value);
@@ -54,13 +55,14 @@ export function createJacoLinkHost({
   onStatus=()=>{}, schedule=setTimeout, cancel=clearTimeout,
 }={}) {
   if(!file || !isLocal(localBaseUrl)) throw Error('LINK_REQUIRES_LOCAL_AURA');
-  if(!/^https:\/\/[A-Za-z0-9.-]+$/.test(origin) || new URL(origin).hostname!==new URL(DEFAULT_ORIGIN).hostname)
+  if(!TRUSTED_ORIGINS.has(origin))
     throw Error('LINK_ORIGIN_NOT_TRUSTED');
   let saved=readState(file);
+  if(saved&&(saved.hostToken||saved.pending)&&((saved.origin||DEFAULT_ORIGIN)!==origin))throw Error('LINK_PAIRING_ORIGIN_MISMATCH');
   let state='DISCONNECTED', error=null, socket=null, timer=null;
   let stopped=false, pendingCalls=0;
   const pendingAttention = new Map();
-  const persist=data=>{saved=data;writeState(file,data);};
+  const persist=data=>{saved={...data,origin};writeState(file,saved);};
   const status=()=>({
     state,error,configured:Boolean(saved?.hostToken),
     deviceId:saved?.deviceId||null,

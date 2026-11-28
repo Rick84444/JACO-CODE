@@ -1,0 +1,16 @@
+{
+  "name": "jaco-cloud-control",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test ../../tests/nova/cloud-control-handoff.test.mjs ../../tests/nova/cloud-postgres-store.test.mjs ../../tests/nova/cloud-handoff.test.mjs render-store.test.mjs google-auth.test.mjs"
+  },
+  "dependencies": {
+    "pg": "8.16.3",
+    "ws": "8.18.3"
+  }
+}
