@@ -69,3 +69,26 @@ A meaningful local model comparison requires equal context, prompt, output budge
 ## Limitations
 
 This integration is source-level and CI-verifiable. Actual Windows launch, PrismML compatibility, 6 GB GPU fit, inference speed, tool calls and hands-on computer control still require real operator-host evidence. No claim of end-to-end autonomy is made by this setup.
+
+## Laptop profile (16 GiB system memory / integrated graphics)
+
+Use the existing launcher with an explicit compatible binary, quantized GGUF and alias. The profile does not select or download a model, or switch Aura providers automatically.
+
+```powershell
+$local = @{
+  Profile = 'Laptop'
+  ServerExe = 'C:\path\llama-server.exe'
+  ModelFile = 'C:\path\small-model.gguf'
+  Alias = 'local-small'
+}
+& .\windows\product\Start-JACO-LocalModel.ps1 @local -PlanOnly
+& .\windows\product\Start-JACO-LocalModel.ps1 @local
+```
+
+The plan does not execute the binary. Start with a compatible 2–4B instruct GGUF in Q4, 4096 context, one sequence, four CPU threads and zero GPU layers. The memory check uses current Windows available physical memory and GGUF/projector file size plus 3.5 GiB estimated headroom. It is a conservative admission heuristic, not a model-specific KV/compute allocation estimate or guarantee against OOM. Shared iGPU memory is not additional physical RAM. It does not kill other processes.
+
+For a comparable second run, stop the first server normally and try `-GpuLayers 8` with an explicitly installed Vulkan-capable backend; only increase to `-Context 8192` after measuring memory and task accuracy. Explicit threads and GPU layers may be adjusted; arbitrary extra arguments and multiple simultaneous sequences are refused in this profile. Standard mode preserves existing defaults. Keep the existing provider selection and consent, budget, tool and mission boundaries.
+
+Compare identical prompts, model file and context: time to first token, generation tokens/sec, peak system memory, GPU use, valid native tool calls, task completion and UI responsiveness. Do not equate HTTP readiness with tool accuracy. A cloud model may be selected by the operator for work exceeding the local model's tested capability; no silent cloud fallback.
+
+Upstream references: [llama.cpp server options](https://github.com/ggml-org/llama.cpp/tree/master/tools/server), [llama.cpp build backends](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md), [Ollama concurrency and memory FAQ](https://github.com/ollama/ollama/blob/main/docs/faq.mdx). For Ollama, one loaded model and one concurrent sequence are starting points; quantized KV cache and Flash Attention require backend/model validation. Do not run both large model servers merely to keep them available.
