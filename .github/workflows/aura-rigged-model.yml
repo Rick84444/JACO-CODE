@@ -10,6 +10,9 @@ on:
       - 'runtime/package.json'
       - 'assets/aura-v31/**'
       - 'runtime/src/lib/auraRigLightform.mjs'
+      - 'runtime/src/lib/auraSpeech*.mjs'
+      - 'runtime/src/lib/vendor/headaudio/**'
+      - 'runtime/src/components/AuraPortrait.tsx'
       - 'runtime/public/branding/aura-anatomical.glb'
       - 'openspec/changes/add-interactive-avatar/specs/interactive-avatar/spec.md'
       - 'openspec/changes/add-interactive-avatar/rigged-model-evaluation.md'
@@ -38,6 +41,12 @@ jobs:
             echo "::notice::V31 binary not supplied; V31 structural and visual acceptance remain pending."
             printf '%s\n' '{"version":"V31","structuralStatus":"NOT_TESTED","visualStatus":"NOT_TESTED","reason":"ASSET_MISSING"}' > aura-rig-evidence/v31-manifest.json
           fi
+      - name: Test full facial speech pipeline contracts and pinned classifier
+        run: |
+          node --check runtime/src/lib/auraRigLightform.mjs
+          node --check runtime/src/lib/auraSpeechWorker.mjs
+          node --check runtime/src/lib/auraSpeechAnalysis.mjs
+          node --test runtime/src/lib/auraSpeechTimeline.test.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: aura-verified-rig

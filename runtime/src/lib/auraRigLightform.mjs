@@ -1,3 +1,4 @@
+import {VISEMES,emptySpeechPose,sampleSpeechPose,approachSpeechPose,createNaturalBlink,validSpeechTimeline} from './auraSpeechTimeline.mjs';
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 
@@ -1113,6 +1114,8 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     };
 
     let energy=0,gazeX=0,gazeY=0,smoothJaw=0;
+    const speechPose=emptySpeechPose(),speechTarget=emptySpeechPose(),naturalBlink=createNaturalBlink();
+    let speechAccent=0,previousSpeechLevel=0;
     let listeningSince=0, previousYaw=0;
     let smoothAA=0,smoothO=0,smoothE=0,smoothU=0,decisionBlend=0,pupilSize=0.31;
     let pointerX=0,pointerY=0,camX=0,camY=0,busPhase=null;
@@ -1120,7 +1123,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     let state={
       active:false,speaking:false,listening:false,
       cognitivePhase:null,
-      x:0,y:0,audioLevel:null,phonemes:null
+      x:0,y:0,audioLevel:null,phonemes:null,speechPlayback:null
     };
     const temp=new THREE.Vector3(),q=new THREE.Quaternion(),euler=new THREE.Euler(0,0,0,'YXZ');
     const rotate=(name,x,y,z)=>{const entry=bones.get(name);if(!entry)return;entry.bone.quaternion.copy(entry.base).multiply(q.setFromEuler(euler.set(x,y,z,'YXZ')));};
@@ -1197,7 +1200,13 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
 
       const liveFormants=voiceTracker.sample();
       const hasExternalLevel=typeof state.audioLevel==='number'&&Number.isFinite(state.audioLevel);
-      const currentAudioLevel=liveFormants?liveFormants.level:(hasExternalLevel?finiteClamp(state.audioLevel,0,1,0):0);
+      const playback=anatomical?state.speechPlayback:null;
+      const timed=Boolean(playback&&validSpeechTimeline(playback.timeline)&&playback.audio);
+      const playing=Boolean(timed&&state.speaking&&!playback.audio.paused&&!playback.audio.ended&&!still);
+      if(timed){sampleSpeechPose(playback.timeline,playing?playback.audio.currentTime:NaN,speechTarget);}
+      else sampleSpeechPose(null,NaN,speechTarget);
+      if(still){sampleSpeechPose(null,NaN,speechPose);}else approachSpeechPose(speechPose,speechTarget,dt);
+      const currentAudioLevel=timed?speechTarget.level:(liveFormants?liveFormants.level:(hasExternalLevel?finiteClamp(state.audioLevel,0,1,0):0));
 
       const activeSignal=Number(state.active||state.speaking||state.listening||isAnalyzing||isVerifying)+currentAudioLevel*0.48;
       energy=still?Number(state.active):energy+(activeSignal-energy)*.08;
@@ -1253,10 +1262,13 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const blinkCycle=t%5.3;
       const b1=smoothstep(1.98,2.06,blinkCycle)*(1-smoothstep(2.06,2.23,blinkCycle));
       const b2=smoothstep(2.32,2.39,blinkCycle)*(1-smoothstep(2.39,2.54,blinkCycle))*.84;
-      const blink=still?0:Math.max(b1,b2);
+      const blink=still?0:anatomical?naturalBlink(t,currentAudioLevel):Math.max(b1,b2);
 
-      const visemes=behaviorEngine.computeVisemes(t,still,state,liveFormants,hasExternalLevel);
-      smoothJaw=still?0:finiteClamp(smoothJaw+(visemes.jaw-smoothJaw)*.32,0,1,0);
+      // V31 never pretends that the synthetic cadence is a measured phoneme.
+      const canUseFallback=!anatomical||Boolean(liveFormants||hasExternalLevel||state.phonemes);
+      const visemes=behaviorEngine.computeVisemes(t,still||timed||!canUseFallback,state,liveFormants,hasExternalLevel);
+      smoothJaw=timed?speechPose.jaw:still?0:finiteClamp(smoothJaw+(visemes.jaw-smoothJaw)*(anatomical?1-Math.exp(-dt/.035):.32),0,1,0);
+      if(anatomical){const rise=Math.max(0,currentAudioLevel-previousSpeechLevel);speechAccent=Math.max(speechAccent*Math.exp(-dt/0.18),state.speaking?Math.min(1,rise*2.2):0);previousSpeechLevel=currentAudioLevel;}
       smoothAA=still?0:finiteClamp(smoothAA+(visemes.aa-smoothAA)*.30,0,1,0);
       smoothO=still?0:finiteClamp(smoothO+(visemes.O-smoothO)*.30,0,1,0);
       smoothE=still?0:finiteClamp(smoothE+(visemes.E-smoothE)*.28,0,1,0);
@@ -1265,7 +1277,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       const targetPupil=0.30+(isAnalyzing?0.065:0)+(state.listening?0.045:0)+0.03*energy+0.02*Math.sin(t*0.7);
       pupilSize=still?0.32:pupilSize+(targetPupil-pupilSize)*0.12;
 
-      const smile=still?.09:.09+.045*(1+Math.sin(t*.72))+.04*energy-(isAnalyzing?.03:0);
+      const smile=anatomical?(still?.025:state.speaking?.025+.025*speechAccent:state.listening?.055:.035):still?.09:.09+.045*(1+Math.sin(t*.72))+.04*energy-(isAnalyzing?.03:0);
       const microSaccadeX=still?0:(isVerifying?verifyScanX:(.032*Math.sin(t*2.05)+.018*Math.cos(t*4.9)));
       const microSaccadeY=still?0:.022*Math.cos(t*1.75)-(isVerifying?.03:0);
       const gazeWeight=relaxedGaze&&state.listening?.15:1;
@@ -1273,22 +1285,39 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       gazeX=still?0:gazeX+(eyeTarget-gazeX)*(contact?1-Math.exp(-dt*24):.24);
       gazeY=still?0:gazeY+((pitch*.46+microSaccadeY)*gazeWeight-gazeY)*.24;
 
-      const squint=still?0:finiteClamp(smile*.45+visemes.cheek+(isAnalyzing?.14:0),0,.38,0);
+      const squint=still?0:anatomical?finiteClamp(smile*.35+currentAudioLevel*.05+speechAccent*.035+(isAnalyzing?.055:0),0,.16,0):finiteClamp(smile*.45+visemes.cheek+(isAnalyzing?.14:0),0,.38,0);
 
-      const lid=relaxedGaze?.18+.82*blink:blink;
+      const lid=anatomical?blink:(relaxedGaze?.18+.82*blink:blink);
       assign('eyeBlinkLeft',lid);assign('eyeBlinkRight',lid);
       assign('eyeSquintLeft',squint);assign('eyeSquintRight',squint);
       assign('cheekSquintLeft',squint*.7);assign('cheekSquintRight',squint*.7);
       assign('jawOpen',smoothJaw);
-      assign('viseme_aa',smoothAA);
-      assign('viseme_O',smoothO);
-      assign('viseme_E',smoothE);
-      assign('viseme_U',smoothU);
-      assign('mouthSmileLeft',smile);assign('mouthSmileRight',smile);
-      assign('browInnerUp',still?0:.05+.15*energy*(.5+.5*Math.sin(t*1.25))+smoothJaw*.15+(isDecision?.14:0));
-      assign('browOuterUpLeft',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
-      assign('browOuterUpRight',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
-      assign('noseSneerLeft',smoothJaw*.12);assign('noseSneerRight',smoothJaw*.12);
+      if(anatomical){
+        // The GLB has the full Oculus set, including teeth/tongue morphs.
+        for(let i=0;i<VISEMES.length;i++){
+          let value=timed?speechPose.weights[i]:0;
+          if(!timed){if(i===0)value=smoothAA*.65;else if(i===1)value=smoothE*.65;else if(i===3)value=smoothO*.65;else if(i===4)value=smoothU*.65;}
+          assign(VISEMES[i],value);
+        }
+        assign('mouthClose',timed?speechPose.close:0);
+        assign('mouthPressLeft',timed?speechPose.press:0);assign('mouthPressRight',timed?speechPose.press:0);
+        assign('mouthSmileLeft',smile);assign('mouthSmileRight',smile*.88);
+        assign('browInnerUp',still?0:.025+.10*speechAccent+(isDecision?.09:0));
+        assign('browOuterUpLeft',still?0:.015+.065*speechAccent);
+        assign('browOuterUpRight',still?0:.012+.05*speechAccent);
+        assign('noseSneerLeft',0);assign('noseSneerRight',0);
+        canvas.dataset.speechMotion=timed?'pcm-viseme-experimental':liveFormants?'audio-formant-fallback':hasExternalLevel||state.phonemes?'explicit-input':'no-audio-analysis';
+      }else{
+        assign('viseme_aa',smoothAA);
+        assign('viseme_O',smoothO);
+        assign('viseme_E',smoothE);
+        assign('viseme_U',smoothU);
+        assign('mouthSmileLeft',smile);assign('mouthSmileRight',smile);
+        assign('browInnerUp',still?0:.05+.15*energy*(.5+.5*Math.sin(t*1.25))+smoothJaw*.15+(isDecision?.14:0));
+        assign('browOuterUpLeft',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
+        assign('browOuterUpRight',still?0:.03+.08*energy*(.5+.5*Math.cos(t*1.1)));
+        assign('noseSneerLeft',smoothJaw*.12);assign('noseSneerRight',smoothJaw*.12);
+      }
       assign('eyeLookInLeft',Math.max(0,gazeX));assign('eyeLookOutLeft',Math.max(0,-gazeX));
       assign('eyeLookOutRight',Math.max(0,gazeX));assign('eyeLookInRight',Math.max(0,-gazeX));
       assign('eyeLookUpLeft',Math.max(0,gazeY));assign('eyeLookDownLeft',Math.max(0,-gazeY));
