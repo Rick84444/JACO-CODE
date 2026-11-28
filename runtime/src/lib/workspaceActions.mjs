@@ -15,17 +15,19 @@ export const WORKSPACE_CONTROL_INSTRUCTION = [
 
 // The Operator Stage: Aura in the middle, panels beside her that she lights up while she talks about them.
 export const STAGE_PANELS = Object.freeze(['mission', 'browser', 'tools']);
+export const STAGE_MOTIONS=Object.freeze(['advance','return','explain']);
 export const STAGE_CONTROL_INSTRUCTION = [
   'You are on the operator\'s stage: you stand in the middle and panels sit beside you.',
   'When you talk about one of them, light it up by writing a directive on its own line; the stage enlarges it with a glow and hides the directive:',
   `[[jaco:focus PANEL]] where PANEL is mission (the work running now, its plan and steps), browser (the page your browser shows) or tools (the tool calls you made).`,
   'Use it when the panel helps the operator see what you mean, at most two per reply. It only changes what is shown.',
+  'Use [[jaco:motion advance]] to take a few steps forward, [[jaco:motion return]] to return, or [[jaco:motion explain]] for a modest explanatory hand gesture. Only when useful or requested, at most one per reply. These animate the avatar only; they never move the computer or execute tools.',
 ].join(' ');
 
-const DIRECTIVE = /\[\[jaco:(open|terminal|file|focus)(?:\s+([^\]\r\n]{1,300}))?\]\]/gi;
+const DIRECTIVE = /\[\[jaco:(open|terminal|file|focus|motion)(?:\s+([^\]\r\n]{1,300}))?\]\]/gi;
 const SAFE_PATH = /^(?!\/)(?![A-Za-z]:)(?!.*(?:^|[\\/])\.\.(?:[\\/]|$))[\w .\-\\/@+]{1,300}$/;
 
-/** @param {string} reply @returns {{ text: string, actions: Array<{type:'open',view:string}|{type:'terminal'}|{type:'file',path:string}|{type:'focus',panel:string}> }} */
+/** @param {string} reply @returns {{ text: string, actions: Array<{type:'open',view:string}|{type:'terminal'}|{type:'file',path:string}|{type:'focus',panel:string}|{type:'motion',motion:string}> }} */
 export function extractWorkspaceActions(reply) {
   const actions = [];
   const text = String(reply || '').replace(DIRECTIVE, (_match, verb, arg) => {
@@ -36,6 +38,7 @@ export function extractWorkspaceActions(reply) {
     else if (kind === 'open' && WORKSPACE_VIEWS.includes(value.toLowerCase())) actions.push({ type: 'open', view: value.toLowerCase() });
     else if (kind === 'file' && SAFE_PATH.test(value)) actions.push({ type: 'file', path: value.replace(/\\/g, '/') });
     else if (kind === 'focus' && STAGE_PANELS.includes(value.toLowerCase())) actions.push({ type: 'focus', panel: value.toLowerCase() });
+    else if(kind==='motion'&&STAGE_MOTIONS.includes(value.toLowerCase())&&!actions.some(a=>a.type==='motion'))actions.push({type:'motion',motion:value.toLowerCase()});
     return '';
   })
     // A directive with a verb the GUI does not know ([[jaco:browser]]) is still a directive, never reply text.

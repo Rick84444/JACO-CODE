@@ -4,6 +4,7 @@
 // real runtime receipts (MCP call log, live mission stream, gameboard, browser frames) and the IDE's chat session.
 import { extractWorkspaceActions, workspaceReplyText } from '/vendor/workspace-actions.mjs';
 import { speechParts } from '/vendor/speech-parts.mjs';
+import { analyzeAuraSpeech } from '/vendor/auraSpeechAnalysis.mjs';
 import { init as initSetup } from '/setup.js';
 
 const $ = id => document.getElementById(id);
@@ -26,7 +27,10 @@ const aura = (() => {
       clearTimeout(idle); idle = setTimeout(() => { state.active = held; apply(); }, 4000);
     },
     hold(on) { held = on; if (on) state.active = true; else { clearTimeout(idle); idle = setTimeout(() => { state.active = false; apply(); }, 1500); } apply(); fallback?.pulse(on ? 0.5 : 0); },
-    voice(stream) { state.speaking = Boolean(stream); rig?.setState({ audioSource: stream || null, speaking: state.speaking }); fallback?.pulse(stream ? 0.4 : 0); },
+    voice(stream,playing=Boolean(stream)) { state.speaking=playing; rig?.setState({audioSource:stream||null,speaking:playing,...(!playing?{speechPlayback:null}:{})});fallback?.pulse(playing?.4:0); },
+    speechPlayback(audio,timeline){rig?.setState({speechPlayback:timeline?{audio,timeline}:null});},
+    motion(action){return rig?.requestMotion(action)===true;},
+    present(el){if(!el)return false;const a=$('orb').getBoundingClientRect(),b=el.getBoundingClientRect();return rig?.requestMotion(b.left+b.width/2<a.left+a.width/2?'present-left':'present-right')===true;},
     listening(on) { state.listening = on; rig?.setState({ listening: on }); },
     // Turn toward an element on screen, hold, then look straight ahead again.
     lookAt(el, ms = 2400) {
@@ -230,26 +234,35 @@ const voice = (() => {
   show();
   function stop() { const c = current; current = null; try { c?.cancel(); } catch { /* already stopped */ } aura.voice(null); }
   // Sentence by sentence: the next one is synthesized while the current one plays, so she starts quickly.
-  async function speak(text) {
+  async function speak(text,onFirstPlay=()=>{}) {
     stop();
     const parts = speechParts(text); if (!parts.length) return;
     const lang = /[åäö]|\b(och|jag|det|är|inte|du|har)\b/i.test(text) ? 'sv-SE' : 'en-US';
     const controller = new AbortController(), audio = new Audio(), urls = [];
-    const handle = { cancel() { controller.abort(); audio.pause(); urls.forEach(u => URL.revokeObjectURL(u)); } };
+    let generation=0,first=true;
+    const clear=()=>{generation++;aura.speechPlayback(null,null);};
+    const cue=()=>{if(first){first=false;onFirstPlay();}};
+    const handle = { cancel() { controller.abort(); audio.pause(); clear();urls.forEach(u => URL.revokeObjectURL(u)); } };
     current = handle;
     const synth = part => fetch('/api/aura/voice/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ text: part, lang }) })
-      .then(async r => { if (!r.ok) throw new Error('VOICE_UNAVAILABLE'); const u = URL.createObjectURL(await r.blob()); urls.push(u); return u; });
-    audio.onplay = () => { if (current === handle) aura.voice(audio.captureStream?.() ?? null); };
-    const play = url => new Promise((resolve, reject) => { audio.onended = resolve; audio.onerror = () => reject(new Error('VOICE_PLAYBACK_FAILED')); audio.src = url; audio.play().catch(reject); });
+      .then(async r=>{if(!r.ok)throw Error('VOICE_UNAVAILABLE');const blob=await r.blob();if(controller.signal.aborted)throw Error('VOICE_CANCELLED');const url=URL.createObjectURL(blob);urls.push(url);return {url,analysis:analyzeAuraSpeech(blob,controller.signal)};});
+    audio.onplay=()=>{if(current!==handle)return;let stream=null;try{stream=audio.captureStream?.()??null;}catch{}aura.voice(stream,true);cue();};
+    const play=part=>new Promise((resolve,reject)=>{
+      clear();const g=generation;
+      void part.analysis.then(timeline=>{if(timeline&&current===handle&&g===generation&&!controller.signal.aborted)aura.speechPlayback(audio,timeline);});
+      audio.onended=()=>{clear();aura.voice(null);resolve();};
+      audio.onerror=()=>{clear();reject(Error('VOICE_PLAYBACK_FAILED'));};
+      audio.src=part.url;audio.play().catch(reject);
+    });
     try {
       let next = synth(parts[0]);
       for (let i = 0; i < parts.length; i++) {
-        const url = await next; if (current !== handle) return;
+        const part = await next; if (current !== handle) return;
         if (i + 1 < parts.length) { next = synth(parts[i + 1]); next.catch(() => {}); }
-        await play(url); if (current !== handle) return;
+        await play(part); if (current !== handle) return;
       }
     } catch (error) { if (!controller.signal.aborted) note(`Aura's voice was unavailable (${error?.message || error}).`); }
-    finally { if (current === handle) { current = null; aura.voice(null); urls.forEach(u => URL.revokeObjectURL(u)); } }
+    finally { if (current === handle) {cue();current=null;clear();aura.voice(null);urls.forEach(u => URL.revokeObjectURL(u));} }
   }
   $('voice').addEventListener('click', () => { readAloud = !readAloud; store('jaco.stage.voice', readAloud); show(); if (!readAloud) stop(); });
   return { speak, stop, get on() { return readAloud; }, set on(v) { readAloud = v; store('jaco.stage.voice', v); show(); }, get speaking() { return Boolean(current); } };
@@ -333,7 +346,7 @@ async function send(text) {
   if (MENTIONS.mission.test(text) || /vad (händer|gör du)|what are you doing|what's happening/i.test(text)) focus(['mission']);
   const thinking = message('assistant', 'Aura is thinking…'); thinking.classList.add('thinking');
   $('auraLine').textContent = 'Thinking…';
-  let answer = '';
+  let answer = '',motionCue=()=>{};
   try {
     await api('/api/aura/chat/session/messages', { id, role: 'user', content: text });
     const data = await api('/api/aura/chat', {
@@ -348,7 +361,11 @@ async function send(text) {
     const meta = [data.degraded ? 'status reply, no model answered' : null, data.modelUsed || [data.provider, data.model].filter(Boolean).join('/'), `${((performance.now() - started) / 1000).toFixed(1)} s`].filter(Boolean).join(' · ');
     thinking.remove(); message('assistant', answer, meta);
     const asked = actions.filter(a => a.type === 'focus').map(a => a.panel);
-    focus(asked.length ? asked : mentioned(answer));
+    const panels=asked.length?asked:mentioned(answer);
+    focus(panels);
+    const motion=actions.find(a=>a.type==='motion')?.motion;
+    const shown=panels[0]&&holos.get(panels[0])?.el;
+    motionCue=()=>{if(motion)aura.motion(motion);else if(shown)aura.present(shown);};
     history.push({ role: 'assistant', content: answer });
     api('/api/aura/chat/session/messages', { id: `${id}:reply`, role: 'assistant', content: answer, meta }).catch(() => message('system', 'The reply is shown but could not be saved.'));
   } catch (error) {
@@ -357,7 +374,7 @@ async function send(text) {
     if (!$('input').value) $('input').value = text;
   } finally { busy = false; $('send').disabled = false; aura.hold(false); $('auraLine').textContent = 'Here with you'; }
   // She answers aloud, then listens again when the operator is talking with her.
-  if (answer && voice.on) await voice.speak(answer);
+  if(answer){if(voice.on)await voice.speak(answer,motionCue);else motionCue();}
   listen();
 }
 $('composer').addEventListener('submit', e => {

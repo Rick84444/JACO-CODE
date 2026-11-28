@@ -1,3 +1,4 @@
+import {createAuraBodyRig} from './auraBodyRig.mjs';
 import {VISEMES,emptySpeechPose,sampleSpeechPose,approachSpeechPose,createNaturalBlink,validSpeechTimeline} from './auraSpeechTimeline.mjs';
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -1102,6 +1103,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     voiceTracker=createVoiceFormantTracker();
     qualityGovernor=createQualityGovernor(isMobile);
     behaviorEngine=createBehaviorEngine();
+    const bodyRig=anatomical?createAuraBodyRig(model,bones):null;
 
     // Pre-allocated spring state objects (zero array allocations per frame)
     const yawSpring={val:0,vel:0};
@@ -1324,6 +1326,15 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
       assign('eyeLookUpLeft',Math.max(0,gazeY));assign('eyeLookDownLeft',Math.max(0,-gazeY));
       assign('eyeLookUpRight',Math.max(0,gazeY));assign('eyeLookDownRight',Math.max(0,-gazeY));
 
+      const bodyPose=bodyRig?.update(dt,still);
+      if(bodyPose){
+        const wide=bodyPose.wide,offset=bodyPose.rootZ;
+        camera.position.set(camX*(1-wide),1.570+camY+(0.89-1.570-camY)*wide,1.05+(4.0/Math.min(1,camera.aspect)-1.05)*wide);
+        camera.lookAt(0,1.540+(.87-1.540)*wide,.03+.18*wide);
+        canvas.dataset.bodyAction=bodyPose.action||'idle';
+        canvas.dataset.bodyTravel=offset.toFixed(3);
+        canvas.dataset.bodyFrame=wide.toFixed(3);
+      }
       model.updateMatrixWorld(true);
 
       let cursor=0;
@@ -1437,6 +1448,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
         state={...state,...next};
         if(motion.matches)render(0);
       },
+      requestMotion(action){return !disposed&&!document.hidden&&!motion.matches&&Boolean(bodyRig?.request(action));},
       attachAudio(audioSource){return voiceTracker.attach(audioSource);},
       dispose
     };

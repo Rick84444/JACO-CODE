@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { operatorStageAssets } from '../../runtime/operator-stage/assets.mjs';
+import { operatorStageAssets,AURA_STAGE_FILES } from '../../runtime/operator-stage/assets.mjs';
 
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../runtime');
 // CI installs the repository root, not the runtime's own packages, so runtime/node_modules/three is absent there
@@ -14,7 +14,7 @@ import os from 'node:os';
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'jaco-stage-src-'));
 process.on('exit', () => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
 for (const rel of ['operator-stage/index.html', 'operator-stage/stage.css', 'operator-stage/stage.js', 'operator-stage/setup.js', 'operator-stage/setupSteps.mjs',
-  'src/lib/auraRigLightform.mjs', 'src/lib/workspaceActions.mjs', 'src/lib/speechParts.mjs']) {
+  'src/lib/auraRigLightform.mjs', 'src/lib/workspaceActions.mjs', 'src/lib/speechParts.mjs',...Object.values(AURA_STAGE_FILES)]) {
   fs.mkdirSync(path.dirname(path.join(fixtureRoot, rel)), { recursive: true });
   fs.copyFileSync(path.join(runtimeRoot, rel), path.join(fixtureRoot, rel));
 }
@@ -127,4 +127,11 @@ test('every stage script parses', async () => {
     const r = spawnSync(process.execPath, ['--check', path.join(runtimeRoot, 'operator-stage', name)], { encoding: 'utf8' });
     assert.equal(r.status, 0, `${name}: ${r.stderr}`);
   }
+});
+
+test('all shared motion and speech dependencies including the binary model are served in source',()=>{
+  for(const name of Object.keys(AURA_STAGE_FILES))assert.ok(assets.resolve('/'+name),name);
+  const model=assets.resolve('/vendor/vendor/headaudio/model-en-mixed.bin');
+  assert.equal(model.type,'application/octet-stream');assert.equal(assets.read(model).length,14352);
+  assert.equal(assets.resolve('/vendor/vendor/headaudio/../secret.bin'),null);
 });
