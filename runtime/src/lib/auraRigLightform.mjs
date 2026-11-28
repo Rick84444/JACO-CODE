@@ -1037,6 +1037,7 @@ export async function createAuraRigLightform(canvas,{signal,onError,relaxedGaze=
     if(names.some(n=>!bones.has(n)))throw Error('AURA_RIG_BONES');
     const morphs=[];model.traverse(o=>{if(o.isSkinnedMesh&&o.morphTargetDictionary)morphs.push(o);});
     const required=['eyeBlinkLeft','eyeBlinkRight','jawOpen','mouthSmileLeft','mouthSmileRight','browInnerUp','viseme_aa','viseme_O'];
+    if(anatomical)required.push(...VISEMES.filter(n=>!required.includes(n)),'mouthClose','mouthPressLeft','mouthPressRight');
     const face=morphs.find(m=>required.every(n=>n in m.morphTargetDictionary));
     if(!face)throw Error('AURA_RIG_MORPHS');
     const probes=['eyeBlinkLeft','jawOpen'].map(name=>{

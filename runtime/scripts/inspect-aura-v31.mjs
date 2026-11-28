@@ -14,7 +14,7 @@ export function inspectV31(bytes){
   const j=JSON.parse(bytes.toString('utf8',20,end));
   if(j.asset?.version!=='2.0'||j.extensionsRequired?.length)throw Error('AURA_V31_GLTF');
   const requiredBones=['Head','Neck','Spine2','LeftShoulder','RightShoulder','PonytailRoot','Ponytail1','Ponytail2','Ponytail3'];
-  const requiredMorphs=['eyeBlinkLeft','eyeBlinkRight','jawOpen','mouthSmileLeft','mouthSmileRight','browInnerUp','viseme_aa','viseme_O','viseme_E','viseme_U'];
+  const requiredMorphs=['eyeBlinkLeft','eyeBlinkRight','jawOpen','mouthSmileLeft','mouthSmileRight','browInnerUp','viseme_aa','viseme_O','viseme_E','viseme_U','viseme_I','viseme_PP','viseme_SS','viseme_TH','viseme_DD','viseme_FF','viseme_kk','viseme_nn','viseme_RR','viseme_CH','mouthClose','mouthPressLeft','mouthPressRight','cheekSquintLeft','cheekSquintRight','browOuterUpLeft','browOuterUpRight'];
   const names=new Set((j.skins||[]).flatMap(s=>s.joints.map(i=>j.nodes[i]?.name)));
   if(requiredBones.some(n=>!names.has(n)))throw Error('AURA_V31_BONES');
   const skinned=(j.nodes||[]).filter(n=>Number.isInteger(n.skin)&&Number.isInteger(n.mesh));

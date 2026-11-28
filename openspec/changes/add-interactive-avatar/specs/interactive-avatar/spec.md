@@ -29,3 +29,6 @@ The renderer SHALL pause or dispose of resources when the avatar is dismissed or
 - V31 SHALL be pinned to 45304080 bytes and SHA-256 ea9c4646cf197f042fa4a39ea8ecd5a438adb1b0865c8eddb0749d0915bd6129. Validate glTF 2.0, required bones and non-empty facial morphs.
 - A missing or invalid V31 SHALL retain the existing lightform and SHALL NOT report V31 readiness.
 - Structural verification is distinct from visual acceptance. Production activation requires actual GUI rendering, consistent portrait scale, speech/motion, Windows and Android performance, asset rights and operator visual approval. Keep the existing lightform as rollback.
+
+### Requirement: Audio-clock facial motion for V31
+When decoded speech audio is available, the renderer SHALL sample all 14 authored visemes from the media playback clock, preserve a bounded coarticulation envelope and prioritize bilabial closure over jaw opening. Silence, interruption and new audio parts SHALL invalidate stale motion. The renderer SHALL use only locally analyzed audio or explicit inputs; synthetic cadence SHALL NOT be labeled lip sync for V31. Browser speech or missing analysis must degrade without changing audible playback. The experimental English-trained classifier SHALL NOT be represented as validated Swedish phoneme alignment without held-out audio/visual testing.
