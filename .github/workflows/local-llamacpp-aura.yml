@@ -68,3 +68,28 @@ jobs:
           if ($observed -notmatch 'LOCAL_MODEL_PORT_OCCUPIED') {
             throw "Launcher failed to reject the occupied port: $observed"
           }
+      - name: Verify laptop profile plans without starting a server
+        shell: powershell
+        run: |
+          $model = Join-Path $env:RUNNER_TEMP 'test-laptop.gguf'
+          $binary = Join-Path $env:RUNNER_TEMP 'test-laptop.exe'
+          [System.IO.File]::WriteAllText($model, 'test-only')
+          [System.IO.File]::WriteAllText($binary, 'not executable')
+          $plan = & .\windows\product\Start-JACO-LocalModel.ps1 -Profile Laptop -PlanOnly -ServerExe $binary -ModelFile $model -Alias 'test-laptop'
+          if ($plan.Context -ne 4096 -or $plan.GpuLayers -ne 0 -or $plan.Threads -ne 4 -or $plan.Parallel -ne 1 -or $plan.ServerStarted -ne $false) { throw 'Incorrect laptop defaults' }
+          $custom = & .\windows\product\Start-JACO-LocalModel.ps1 -Profile Laptop -PlanOnly -ServerExe $binary -ModelFile $model -Alias 'test-laptop' -Context 8192 -GpuLayers 8
+          if ($custom.Context -ne 8192 -or $custom.GpuLayers -ne 8) { throw 'Explicit options were lost' }
+          foreach ($case in @('parallel','context','extra','missing')) {
+            $observed = ''
+            try {
+              $params = @{Profile='Laptop'; PlanOnly=$true; ServerExe=$binary; ModelFile=$model; Alias='test-laptop'}
+              switch ($case) {
+                'parallel' { $params.Parallel=2; $expected='LAPTOP_ONE_SEQUENCE_REQUIRED' }
+                'context' { $params.Context=16384; $expected='LAPTOP_CONTEXT_LIMIT' }
+                'extra' { $params.ExtraArgs='--host 0.0.0.0'; $expected='LAPTOP_EXTRA_ARGS_UNSUPPORTED' }
+                'missing' { $params.Remove('ModelFile'); $expected='LAPTOP_EXPLICIT_MODEL_REQUIRED' }
+              }
+              & .\windows\product\Start-JACO-LocalModel.ps1 @params | Out-Null
+            } catch { $observed = $_.Exception.Message }
+            if ($observed -notmatch $expected) { throw "Laptop guard ${case} failed: $observed" }
+          }

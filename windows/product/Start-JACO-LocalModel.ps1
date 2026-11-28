@@ -15,10 +15,28 @@ param(
   # Vision models: the multimodal projector (mmproj) file that belongs to the GGUF. Empty = text only.
   [string]$MmprojFile = '',
   # Extra llama-server arguments as one string, split on spaces, for example cache quantization: -ExtraArgs '-fa on -ctk q8_0 -ctv q8_0'
-  [string]$ExtraArgs = ''
+  [string]$ExtraArgs = '',
+  [ValidateSet('Standard','Laptop')][string]$Profile = 'Standard',
+  [ValidateRange(0, 64)][int]$Threads = 0,
+  [switch]$PlanOnly
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ($Profile -eq 'Laptop') {
+  # Explicit model selection prevents accidentally loading the default 9B model.
+  foreach ($required in @('ServerExe','ModelFile','Alias')) {
+    if (-not $PSBoundParameters.ContainsKey($required) -or [string]::IsNullOrWhiteSpace((Get-Variable -Name $required -ValueOnly))) {
+      throw "LAPTOP_EXPLICIT_MODEL_REQUIRED: pass -$required"
+    }
+  }
+  if (-not $PSBoundParameters.ContainsKey('Context')) { $Context = 4096 }
+  if (-not $PSBoundParameters.ContainsKey('GpuLayers')) { $GpuLayers = 0 }
+  if (-not $PSBoundParameters.ContainsKey('Threads')) { $Threads = 4 }
+  if ($Parallel -ne 1) { throw 'LAPTOP_ONE_SEQUENCE_REQUIRED' }
+  if ($Context -gt 8192) { throw 'LAPTOP_CONTEXT_LIMIT: maximum 8192 tokens' }
+  if (-not [string]::IsNullOrWhiteSpace($ExtraArgs)) { throw 'LAPTOP_EXTRA_ARGS_UNSUPPORTED: use explicit options' }
+}
 
 $root = Join-Path $env:LOCALAPPDATA 'Bonsai9B-Test'
 if ([string]::IsNullOrWhiteSpace($ServerExe)) {
@@ -48,9 +66,20 @@ if (-not [string]::IsNullOrWhiteSpace($MmprojFile)) {
 }
 $ModelFile = (Resolve-Path -LiteralPath $ModelFile).ProviderPath
 
+# A conservative preflight heuristic, not a guarantee of inference fit. Windows
+# reports available memory including shared GPU pressure; do not add iGPU VRAM to RAM.
+if ($Profile -eq 'Laptop') {
+  $available = [double](Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).FreePhysicalMemory * 1KB
+  $modelBytes = [double](Get-Item -LiteralPath $ModelFile).Length
+  if (-not [string]::IsNullOrWhiteSpace($MmprojFile)) { $modelBytes += [double](Get-Item -LiteralPath $MmprojFile).Length }
+  $requiredBytes = $modelBytes + 3.5GB
+  Write-Host ('Laptop preflight: {0:N2} GiB available, {1:N2} GiB heuristic minimum (weights + 3.5 GiB headroom).' -f ($available / 1GB), ($requiredBytes / 1GB))
+  if ($available -lt $requiredBytes -and -not $PlanOnly) { throw 'LAPTOP_MEMORY_PRESSURE: free memory or select a smaller model; no process was stopped' }
+}
+
 # Do not assume an existing listener belongs to this model or terminate another process.
 $listener = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
-if ($listener.Count -gt 0) {
+if ($listener.Count -gt 0 -and -not $PlanOnly) {
   throw "LOCAL_MODEL_PORT_OCCUPIED: $Port; inspect the port owner before starting another server"
 }
 
@@ -71,8 +100,13 @@ $arguments = @(
   '-np', [string]$Parallel,
   '--jinja'
 )
+if ($Threads -gt 0) { $arguments += @('-t', [string]$Threads) }
 if (-not [string]::IsNullOrWhiteSpace($MmprojFile)) { $arguments += @('--mmproj', $MmprojFile) }
 if (-not [string]::IsNullOrWhiteSpace($ExtraArgs)) { $arguments += @($ExtraArgs.Trim() -split '\s+') }
+if ($PlanOnly) {
+  [pscustomobject]@{ Profile = $Profile; Alias = $Alias; Port = $Port; Context = $Context; GpuLayers = $GpuLayers; Threads = $Threads; Parallel = $Parallel; PortOccupied = ($listener.Count -gt 0); ServerStarted = $false }
+  return
+}
 Push-Location (Split-Path -Parent $ServerExe)
 try {
   & $ServerExe @arguments
